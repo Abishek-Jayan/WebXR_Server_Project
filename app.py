@@ -1,46 +1,70 @@
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response,send_file
 from flask_socketio import SocketIO, emit
 from pygltflib import GLTF2
-import torch
-import struct
-import threading
-import time
+import pyrender
+import trimesh
+from PIL import Image
 import numpy as np
 import os
+import pickle
 
 app = Flask(__name__)
 
 # Path to the GLB file
 filename = "static/scifi_girl_v.01.glb"
-modified_filename = "static/modified_scifi_girl_v.01.glb"
+output_dir = "output_images"
+serialized_mesh_file = "serialized_mesh.pkl"
 
 # Initialize Socket.IO
-socketio = SocketIO(app, cors_allowed_origins="*")
+# socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Ensure the GLB file exists
 if not os.path.exists(filename):
     raise FileNotFoundError(f"GLB file not found at {filename}")
+os.makedirs(output_dir, exist_ok=True)
+
+
+
+
+os.makedirs(output_dir, exist_ok=True)
 
 # Serve the main HTML page
 @app.route("/")
 def index():
-    return render_template("gltf_viewer.html")
+    if os.path.exists(serialized_mesh_file):
+        with open(serialized_mesh_file, 'rb') as f:
+            mesh = pickle.load(f)
+    else:
+        mesh = trimesh.load_mesh(filename)
 
-# Serve the GLB file directly
-@app.route("/model")
-def get_model():
-    """Serve the GLB file to the client."""
-    try:
-        with open(filename, "rb") as f:
-            return Response(f.read(), mimetype="model/gltf-binary")
-    except FileNotFoundError:
-        return jsonify({"error": "Model not found"}), 404
+    with open(serialized_mesh_file, 'wb') as f:
+        pickle.dump(mesh,f)
 
-current_scale = 1.0  # Global variable outside process_glb
+    scene = pyrender.Scene()
+    mesh = pyrender.Mesh.from_trimesh(mesh)
+    mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))
+    camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=1.414)
+    camera_node = pyrender.Node(camera=camera)
+    camera_node.matrix = np.array([
+        [1, 0, 0, 0],
+        [0, 1, 0, 1],
+        [0, 0, 1, 5],  # Move the camera 5 units back
+        [0, 0, 0, 1]
+    ])
+    light = pyrender.PointLight(intensity = 2.0)
+    light_node = pyrender.Node(light=light,matrix=np.eye(4))
+    scene.add_node(camera_node)
+    scene.add_node(light_node)
+    scene.add_node(mesh_node)
+    # pyrender.Viewer(scene)
 
-# Process the GLB file and return modified vertices
-def process_glb():
-    pass
+    # # Render the scene
+    r = pyrender.OffscreenRenderer(640, 480)
+    color, _ = r.render(scene)
+    # # Save the rendered image
+    image = Image.fromarray(color)
+    image.save(os.path.join(output_dir, "rendered_model.png"))
+    return send_file(output_dir+"/rendered_model.png",mimetype='image/png')
 
 
 # Add CORS headers to all responses
@@ -51,4 +75,4 @@ def add_cors_headers(response):
     return response
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True)
+    app.run()

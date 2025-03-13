@@ -1,11 +1,13 @@
-from flask import Flask, render_template, request, jsonify, Response,send_file
+
+from flask import Flask, send_file
 from flask_socketio import SocketIO, emit
-from pygltflib import GLTF2
+import os
+os.environ["PYOPENGL_PLATFORM"] = "egl"
+
 import pyrender
 import trimesh
 from PIL import Image
 import numpy as np
-import os
 import pickle
 
 app = Flask(__name__)
@@ -48,7 +50,7 @@ def index():
     camera_node.matrix = np.array([
         [1, 0, 0, 0],
         [0, 1, 0, 1],
-        [0, 0, 1, 5],  # Move the camera 5 units back
+        [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
         [0, 0, 0, 1]
     ])
     light = pyrender.PointLight(intensity = 2.0)
@@ -59,7 +61,7 @@ def index():
     # pyrender.Viewer(scene)
 
     # # Render the scene
-    r = pyrender.OffscreenRenderer(640, 480)
+    r = pyrender.OffscreenRenderer(1920, 1080)
     color, _ = r.render(scene)
     # # Save the rendered image
     image = Image.fromarray(color)
@@ -75,4 +77,5 @@ def add_cors_headers(response):
     return response
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)

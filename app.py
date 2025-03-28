@@ -65,7 +65,7 @@ buffered = BytesIO()
 r = pyrender.OffscreenRenderer(256, 181)
 buffered = BytesIO()
 last_emit_time = 0
-MIN_INTERVAL = 0.1667  # ~30 Hz (33 ms)
+MIN_INTERVAL = 0.033  # ~30 Hz (33 ms)
 
 def render_scene(pose, eye_offset = 0.0):
     adjusted_pose = pose.copy()

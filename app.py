@@ -1,7 +1,10 @@
 
-from flask import Flask, send_file
+import time
+from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
-import os
+import eventlet
+import eventlet.wsgi
+import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 import pyrender
@@ -9,64 +12,119 @@ import trimesh
 from PIL import Image
 import numpy as np
 import pickle
+from scipy.spatial.transform import Rotation  # For quaternion to rotation matrix
+import base64
+from io import BytesIO
 
 app = Flask(__name__)
-
 # Path to the GLB file
 filename = "static/scifi_girl_v.01.glb"
-output_dir = "output_images"
 serialized_mesh_file = "serialized_mesh.pkl"
 
 # Initialize Socket.IO
-# socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, async_mode = 'eventlet', cors_allowed_origins='*')
+
 
 # Ensure the GLB file exists
 if not os.path.exists(filename):
     raise FileNotFoundError(f"GLB file not found at {filename}")
-os.makedirs(output_dir, exist_ok=True)
 
+if os.path.exists(serialized_mesh_file):
+    with open(serialized_mesh_file, 'rb') as f:
+        mesh = pickle.load(f)
+else:
+    mesh = trimesh.load_mesh(filename)
 
+with open(serialized_mesh_file, 'wb') as f:
+    pickle.dump(mesh,f)
 
+scene = pyrender.Scene()
+mesh = pyrender.Mesh.from_trimesh(mesh)
+mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))
+camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=1.414)
+camera_node = pyrender.Node(camera=camera)
+camera_node.matrix = np.array([
+    [1, 0, 0, 0],
+    [0, 1, 0, 1],
+    [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
+    [0, 0, 0, 1]
+])
+initial_pose = np.array([
+    [1, 0, 0, 0],
+    [0, 1, 0, 1],
+    [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
+    [0, 0, 0, 1]
+])
+light = pyrender.PointLight(intensity = 2.0)
+light_node = pyrender.Node(light=light,matrix=np.eye(4))
+scene.add_node(light_node)
+scene.add_node(mesh_node)
+scene.add_node(camera_node)
 
-os.makedirs(output_dir, exist_ok=True)
+buffered = BytesIO()
+r = pyrender.OffscreenRenderer(256, 181)
+buffered = BytesIO()
+last_emit_time = 0
+MIN_INTERVAL = 0.1667  # ~30 Hz (33 ms)
+
+def render_scene(pose, eye_offset = 0.0):
+    adjusted_pose = pose.copy()
+    adjusted_pose[0,3] += eye_offset
+    scene.set_pose(camera_node, adjusted_pose)
+    color, _ = r.render(scene)
+    rgba = np.concatenate([color, np.full((color.shape[0], color.shape[1], 1), 255, dtype=np.uint8)], axis=2)
+    return rgba.tobytes()
+
 
 # Serve the main HTML page
 @app.route("/")
 def index():
-    if os.path.exists(serialized_mesh_file):
-        with open(serialized_mesh_file, 'rb') as f:
-            mesh = pickle.load(f)
-    else:
-        mesh = trimesh.load_mesh(filename)
+    initial_rgb = render_scene(initial_pose)  # Returns raw RGBA bytes
+    initial_rgba = np.frombuffer(initial_rgb, dtype=np.uint8).reshape(181, 256, 4)
+    import base64
+    img = Image.fromarray(initial_rgba)
+    img.save(buffered, format="PNG")
+    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')  # Convert to base64
+    return render_template('gltf_viewer.html', initial_image=img_base64)
 
-    with open(serialized_mesh_file, 'wb') as f:
-        pickle.dump(mesh,f)
+@socketio.on('connect')
+def handle_connect():
+    print("Client connected:")
 
-    scene = pyrender.Scene()
-    mesh = pyrender.Mesh.from_trimesh(mesh)
-    mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))
-    camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=1.414)
-    camera_node = pyrender.Node(camera=camera)
-    camera_node.matrix = np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 1],
-        [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
-        [0, 0, 0, 1]
-    ])
-    light = pyrender.PointLight(intensity = 2.0)
-    light_node = pyrender.Node(light=light,matrix=np.eye(4))
-    scene.add_node(camera_node)
-    scene.add_node(light_node)
-    scene.add_node(mesh_node)
-    # pyrender.Viewer(scene)
+@socketio.on('disconnect')
+def handle_disconnect():
+    print("Client disconnected:")
 
-    # # Render the scene
-    r = pyrender.OffscreenRenderer(1920, 1080)
-    color, _ = r.render(scene)
-    # # Save the rendered image
-    image = Image.fromarray(color)
-    image.save(os.path.join(output_dir, "rendered_model.png"))
-    return send_file(output_dir+"/rendered_model.png",mimetype='image/png')
+
+@socketio.on('camera_data')
+def update_camera(camera):
+    print("Recieved new camera data")
+    global last_emit_time
+    current_time = time.time()
+    if current_time - last_emit_time < MIN_INTERVAL:
+        return  # Skip if too soon
+    camera = json.loads(camera)
+    print("Camera pos: "+str(camera.get("position")) + "\n Camera quaternion: "+ str(camera.get("quaternion")))
+    
+    # Extract position and quaternion
+    position = camera.get("position")
+    quaternion = camera.get("quaternion")
+    position = np.array([position['x'], position['y'], -position['z']])
+    quaternion = np.array([quaternion['w'], quaternion['x'], quaternion['y'], quaternion['z']])  # pyrender uses wxyz order
+
+    # Create pose matrix
+    pose = np.eye(4)
+    pose[:3, 3] = position
+    # Convert quaternion to rotation matrix and set it in the pose matrix
+    rotation = Rotation.from_quat(quaternion).as_matrix()  # Convert quaternion to 3x3 rotation matrix
+    pose[:3, :3] = rotation
+    left_future = eventlet.spawn(render_scene,pose,-0.03)
+    right_future = eventlet.spawn(render_scene,pose,0.03)
+    left_img_str = left_future.wait()
+    right_img_str = right_future.wait()
+    socketio.emit('image_update', {'left_image': left_img_str, 'right_image': right_img_str})
+    print("Finished rendering the new scenes")
+    last_emit_time = current_time
 
 
 # Add CORS headers to all responses
@@ -78,4 +136,7 @@ def add_cors_headers(response):
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    # Wrap with eventlet WSGI server and SSL
+    listener = eventlet.listen(('0.0.0.0', port))
+    listener = eventlet.wrap_ssl(listener, certfile='cert.pem', keyfile='key.pem', server_side=True, ciphers='ECDHE-RSA-AES128-GCM-SHA256')
+    eventlet.wsgi.server(listener, app)

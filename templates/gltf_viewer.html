@@ -3,12 +3,108 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Model Viewer</title>
+    <title>3D Model Viewer - Sprite</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three/examples/js/loaders/GLTFLoader.js"></script>
-    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script> -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js" type="module"></script>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
 <body>
-    <img id="dynamic-image" src="{{ url_for('/')}}" alt="Generated Image">
+    <script type="module">
+        import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
+        const socket = io('https://localhost:5000');
+
+        socket.on('connect', () => console.log("Connected to server"));
+        socket.on('disconnect', () => console.log("Disconnected from server"));
+
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
+        camera.position.set(0, 1, 5);
+        camera.lookAt(0, 0, 0);
+
+        const width = 256;  // Match server render resolution
+        const height = 181;
+
+        // Create Sprites with DataTextures for left and right eyes
+        const leftData = new Uint8Array(width * height * 4);
+        const leftTexture = new THREE.DataTexture(leftData, width, height, THREE.RGBAFormat);
+        leftTexture.minFilter = THREE.LinearFilter;
+        leftTexture.magFilter = THREE.LinearFilter;
+        const leftMaterial = new THREE.SpriteMaterial({ map: leftTexture });
+        const leftSprite = new THREE.Sprite(leftMaterial);
+        leftSprite.scale.set(16, 9, 1);
+        leftSprite.position.set(-0.03, 0, -1); // Closer to camera
+        leftSprite.layers.set(1);
+        camera.add(leftSprite); // Attach to camera
+
+        const rightData = new Uint8Array(width * height * 4);
+        const rightTexture = new THREE.DataTexture(rightData, width, height, THREE.RGBAFormat);
+        rightTexture.minFilter = THREE.LinearFilter;
+        rightTexture.magFilter = THREE.LinearFilter;
+        const rightMaterial = new THREE.SpriteMaterial({ map: rightTexture });
+        const rightSprite = new THREE.Sprite(rightMaterial);
+        rightSprite.scale.set(16, 9, 1);
+        rightSprite.position.set(0.03, 0, -1); // Closer to camera
+        rightSprite.layers.set(2);
+        camera.add(rightSprite); // Attach to camera
+
+        scene.add(camera); // Ensure camera is in the scene
+        camera.layers.enable(1);
+        camera.layers.enable(2);
+
+
+        renderer.setAnimationLoop(() => renderer.render(scene, camera));
+
+        socket.on('image_update', (data) => {
+            console.log("New Images Received");
+            console.log(data);
+            console.log("Left image size:", data.left_image.byteLength);
+            console.log("Right image size:", data.right_image.byteLength);
+
+            const leftRGBA = new Uint8Array(data.left_image);
+            const rightRGBA = new Uint8Array(data.right_image);
+
+            // Verify data size
+
+            // Update texture data
+            leftData.set(leftRGBA);
+            rightData.set(rightRGBA);
+            leftTexture.needsUpdate = true;
+            rightTexture.needsUpdate = true;
+
+            // Log pixel data for debugging
+            console.log("Left first pixel (RGBA):", leftRGBA.slice(0, 4));
+            console.log("Right first pixel (RGBA):", rightRGBA.slice(0, 4));
+            console.log("Updated new images");
+        });
+
+        let lastPosition = camera.position.clone();
+        let lastQuaternion = camera.quaternion.clone();
+        const THRESHOLD = 0.01;
+
+        renderer.xr.addEventListener('sessionstart', () => {
+            console.log("VR session started");
+            setInterval(() => {
+                if (renderer.xr.isPresenting) {
+                    const posChanged = !camera.position.equals(lastPosition);
+                    const quatChanged = !camera.quaternion.equals(lastQuaternion);
+                    if (posChanged || quatChanged) {
+                        console.log("Sending new camera view:", camera.position, camera.quaternion);
+                        socket.emit('camera_data', JSON.stringify({
+                            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+                        }));
+                        lastPosition.copy(camera.position);
+                        lastQuaternion.copy(camera.quaternion);
+                    }
+                }
+            }, 1000 / 60); // 30 Hz
+        });
+    </script>
 </body>
 </html>

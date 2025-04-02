@@ -27,8 +27,8 @@
         camera.position.set(0, 1, 5);
         camera.lookAt(0, 0, 0);
 
-        const width = 256;  // Match server render resolution
-        const height = 181;
+        const width = 960;  // Match server render resolution
+        const height = 540;
 
         // Create Sprites with DataTextures for left and right eyes
         const leftData = new Uint8Array(width * height * 4);
@@ -58,13 +58,13 @@
         camera.layers.enable(2);
 
 
-        renderer.setAnimationLoop(() => renderer.render(scene, camera));
+        renderer.setAnimationLoop(() => {
+            renderer.render(scene, camera);
+        });
 
         socket.on('image_update', (data) => {
+            const start = performance.now();
             console.log("New Images Received");
-            console.log(data);
-            console.log("Left image size:", data.left_image.byteLength);
-            console.log("Right image size:", data.right_image.byteLength);
 
             const leftRGBA = new Uint8Array(data.left_image);
             const rightRGBA = new Uint8Array(data.right_image);
@@ -78,9 +78,10 @@
             rightTexture.needsUpdate = true;
 
             // Log pixel data for debugging
-            console.log("Left first pixel (RGBA):", leftRGBA.slice(0, 4));
-            console.log("Right first pixel (RGBA):", rightRGBA.slice(0, 4));
             console.log("Updated new images");
+            const end = performance.now();
+            console.log(`Image update processing time: ${(end - start).toFixed(2)} ms`);
+
         });
 
         let lastPosition = camera.position.clone();
@@ -91,16 +92,18 @@
             console.log("VR session started");
             setInterval(() => {
                 if (renderer.xr.isPresenting) {
+                    const start = performance.now();
                     const posChanged = !camera.position.equals(lastPosition);
                     const quatChanged = !camera.quaternion.equals(lastQuaternion);
                     if (posChanged || quatChanged) {
-                        console.log("Sending new camera view:", camera.position, camera.quaternion);
                         socket.emit('camera_data', JSON.stringify({
                             position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
                             quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
                         }));
                         lastPosition.copy(camera.position);
                         lastQuaternion.copy(camera.quaternion);
+                        const end = performance.now();
+                        console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
                     }
                 }
             }, 1000 / 30); // 30 Hz

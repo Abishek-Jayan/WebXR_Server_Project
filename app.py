@@ -38,10 +38,12 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
+SCREEN_WIDTH = 960
+SCREEN_HEIGHT = 540
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))
-camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=1.414)
+camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=SCREEN_WIDTH/SCREEN_HEIGHT)
 camera_node = pyrender.Node(camera=camera)
 camera_node.matrix = np.array([
     [1, 0, 0, 0],
@@ -62,17 +64,20 @@ scene.add_node(mesh_node)
 scene.add_node(camera_node)
 
 buffered = BytesIO()
-r = pyrender.OffscreenRenderer(256, 181)
+r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 buffered = BytesIO()
 last_emit_time = 0
 MIN_INTERVAL = 0.033  # ~30 Hz (33 ms)
 
 def render_scene(pose, eye_offset = 0.0):
+    start_time = time.time()
     adjusted_pose = pose.copy()
     adjusted_pose[0,3] += eye_offset
     scene.set_pose(camera_node, adjusted_pose)
     color, _ = r.render(scene)
     rgba = np.concatenate([color, np.full((color.shape[0], color.shape[1], 1), 255, dtype=np.uint8)], axis=2)
+    end_time = time.time()
+    print(f"render_scene time (eye_offset={eye_offset}): {(end_time - start_time)*1000:.2f} ms")
     return rgba.tobytes()
 
 
@@ -80,7 +85,7 @@ def render_scene(pose, eye_offset = 0.0):
 @app.route("/")
 def index():
     initial_rgb = render_scene(initial_pose)  # Returns raw RGBA bytes
-    initial_rgba = np.frombuffer(initial_rgb, dtype=np.uint8).reshape(181, 256, 4)
+    initial_rgba = np.frombuffer(initial_rgb, dtype=np.uint8).reshape(SCREEN_HEIGHT, SCREEN_WIDTH, 4)
     import base64
     img = Image.fromarray(initial_rgba)
     img.save(buffered, format="PNG")
@@ -109,15 +114,10 @@ def update_camera(camera):
     # Extract position and quaternion
     position = camera.get("position")
     quaternion = camera.get("quaternion")
-    position = np.array([position['x'], position['y'], -position['z']])
-    quaternion = np.array([quaternion['w'], quaternion['x'], quaternion['y'], quaternion['z']])  # pyrender uses wxyz order
-
-    # Create pose matrix
-    pose = np.eye(4)
-    pose[:3, 3] = position
-    # Convert quaternion to rotation matrix and set it in the pose matrix
-    rotation = Rotation.from_quat(quaternion).as_matrix()  # Convert quaternion to 3x3 rotation matrix
-    pose[:3, :3] = rotation
+    start_time = time.time()
+    pose = convert_camera_coors(position,quaternion)
+    end_time = time.time()
+    print(f"Camera Coordinates conversion from frontend to backend: {(end_time - start_time)*1000:.2f} ms")
     left_future = eventlet.spawn(render_scene,pose,-0.03)
     right_future = eventlet.spawn(render_scene,pose,0.03)
     left_img_str = left_future.wait()
@@ -125,6 +125,17 @@ def update_camera(camera):
     socketio.emit('image_update', {'left_image': left_img_str, 'right_image': right_img_str})
     print("Finished rendering the new scenes")
     last_emit_time = current_time
+
+
+def convert_camera_coors(position,quaternion):
+    position = np.array([position['x'], position['y'], -position['z']])
+    quaternion = np.array([quaternion['w'], quaternion['x'], quaternion['y'], quaternion['z']])
+    pose = np.eye(4)
+    pose[:3, 3] = position
+    # Convert quaternion to rotation matrix and set it in the pose matrix
+    rotation = Rotation.from_quat(quaternion).as_matrix()  # Convert quaternion to 3x3 rotation matrix
+    pose[:3, :3] = rotation
+    return pose
 
 
 # Add CORS headers to all responses

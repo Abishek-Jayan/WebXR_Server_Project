@@ -38,8 +38,8 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
-SCREEN_WIDTH = 960
-SCREEN_HEIGHT = 540
+SCREEN_WIDTH = 320
+SCREEN_HEIGHT = 180
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))

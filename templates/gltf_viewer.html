@@ -11,7 +11,7 @@
 <body>
     <script type="module">
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
-        const socket = io('https://localhost:5000');
+        const socket = io();
 
         socket.on('connect', () => console.log("Connected to server"));
         socket.on('disconnect', () => console.log("Disconnected from server"));
@@ -27,8 +27,8 @@
         camera.position.set(0, 1, 5);
         camera.lookAt(0, 0, 0);
 
-        const width = 960;  // Match server render resolution
-        const height = 540;
+        const width = 320;  // Match server render resolution
+        const height = 180;
 
         // Create Sprites with DataTextures for left and right eyes
         const leftData = new Uint8Array(width * height * 4);

@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,13 +9,12 @@
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js" type="module"></script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
 </head>
+
 <body>
     <script type="module">
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
         const socket = io();
 
-        socket.on('connect', () => console.log("Connected to server"));
-        socket.on('disconnect', () => console.log("Disconnected from server"));
 
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
@@ -24,11 +24,18 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
-        camera.position.set(0, 1, 5);
-        camera.lookAt(0, 0, 0);
 
         const width = 320;  // Match server render resolution
         const height = 180;
+        
+        socket.on('connect', () => {
+            console.log("Connected to server");
+            socket.emit('camera_data', JSON.stringify({
+                position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+            }));
+        });
+        socket.on('disconnect', () => console.log("Disconnected from server"));
 
         // Create Sprites with DataTextures for left and right eyes
         const leftData = new Uint8Array(width * height * 4);
@@ -110,4 +117,5 @@
         });
     </script>
 </body>
+
 </html>

@@ -27,8 +27,8 @@ pathspec
 pillow
 platformdirs
 pyglet
-PyOpenGL
 pyrender
+PyOpenGL==3.1.9
 python-engineio
 python-socketio
 scipy

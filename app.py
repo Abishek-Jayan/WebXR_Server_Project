@@ -18,7 +18,7 @@ from io import BytesIO
 
 app = Flask(__name__)
 # Path to the GLB file
-filename = "static/scifi_girl_v.01.glb"
+filename = "static/Duck.glb"
 serialized_mesh_file = "serialized_mesh.pkl"
 
 # Initialize Socket.IO
@@ -42,21 +42,18 @@ SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 180
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
-mesh_node = pyrender.Node(mesh = mesh, matrix = np.eye(4))
-camera = pyrender.PerspectiveCamera(yfov=np.pi/3.0, aspectRatio=SCREEN_WIDTH/SCREEN_HEIGHT)
+
+#Sets the position of the object
+mesh_initial_position = np.eye(4)
+mesh_initial_position[2,3] = 3.0
+mesh_initial_position[0,3] = 0
+
+
+mesh_node = pyrender.Node(mesh = mesh, matrix = mesh_initial_position)
+
+
+camera = pyrender.PerspectiveCamera(yfov=np.deg2rad(110), aspectRatio=SCREEN_WIDTH/SCREEN_HEIGHT)
 camera_node = pyrender.Node(camera=camera)
-camera_node.matrix = np.array([
-    [1, 0, 0, 0],
-    [0, 1, 0, 1],
-    [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
-    [0, 0, 0, 1]
-])
-initial_pose = np.array([
-    [1, 0, 0, 0],
-    [0, 1, 0, 1],
-    [0, 0, 1, 5],  # Move the camera 5 units back and 1 unit up
-    [0, 0, 0, 1]
-])
 light = pyrender.PointLight(intensity = 2.0)
 light_node = pyrender.Node(light=light,matrix=np.eye(4))
 scene.add_node(light_node)
@@ -68,6 +65,8 @@ r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 buffered = BytesIO()
 last_emit_time = 0
 MIN_INTERVAL = 0.033  # ~30 Hz (33 ms)
+
+
 
 def render_scene(pose, eye_offset = 0.0):
     start_time = time.time()
@@ -84,13 +83,7 @@ def render_scene(pose, eye_offset = 0.0):
 # Serve the main HTML page
 @app.route("/")
 def index():
-    initial_rgb = render_scene(initial_pose)  # Returns raw RGBA bytes
-    initial_rgba = np.frombuffer(initial_rgb, dtype=np.uint8).reshape(SCREEN_HEIGHT, SCREEN_WIDTH, 4)
-    import base64
-    img = Image.fromarray(initial_rgba)
-    img.save(buffered, format="PNG")
-    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')  # Convert to base64
-    return render_template('gltf_viewer.html', initial_image=img_base64)
+    return render_template('gltf_viewer.html')
 
 @socketio.on('connect')
 def handle_connect():
@@ -109,13 +102,15 @@ def update_camera(camera):
     if current_time - last_emit_time < MIN_INTERVAL:
         return  # Skip if too soon
     camera = json.loads(camera)
-    print("Camera pos: "+str(camera.get("position")) + "\n Camera quaternion: "+ str(camera.get("quaternion")))
+    print("Camera pos before conversion: "+str(camera.get("position")) + "\n Camera quaternion: "+ str(camera.get("quaternion")))
     
     # Extract position and quaternion
     position = camera.get("position")
     quaternion = camera.get("quaternion")
     start_time = time.time()
     pose = convert_camera_coors(position,quaternion)
+    print("Camera after conversion: "+ str(pose))
+
     end_time = time.time()
     print(f"Camera Coordinates conversion from frontend to backend: {(end_time - start_time)*1000:.2f} ms")
     left_future = eventlet.spawn(render_scene,pose,-0.03)
@@ -129,7 +124,7 @@ def update_camera(camera):
 
 def convert_camera_coors(position,quaternion):
     position = np.array([position['x'], position['y'], -position['z']])
-    quaternion = np.array([quaternion['w'], quaternion['x'], quaternion['y'], quaternion['z']])
+    quaternion = np.array([quaternion['w'], quaternion['z'], quaternion['y'], quaternion['x']]) #X and Z axes get swapped from ThreeJS to OpenGL
     pose = np.eye(4)
     pose[:3, 3] = position
     # Convert quaternion to rotation matrix and set it in the pose matrix

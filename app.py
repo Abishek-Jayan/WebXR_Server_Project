@@ -8,6 +8,10 @@ import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
 import pyrender
+import OpenGL
+print("OpenGL platform:", OpenGL.platform.PLATFORM)
+assert 'egl' in str(OpenGL.platform.PLATFORM).lower(), "EGL backend not loaded!"
+
 import trimesh
 from PIL import Image
 import numpy as np
@@ -64,7 +68,6 @@ buffered = BytesIO()
 r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 buffered = BytesIO()
 last_emit_time = 0
-MIN_INTERVAL = 0.033  # ~30 Hz (33 ms)
 
 
 
@@ -99,8 +102,7 @@ def update_camera(camera):
     print("Recieved new camera data")
     global last_emit_time
     current_time = time.time()
-    if current_time - last_emit_time < MIN_INTERVAL:
-        return  # Skip if too soon
+
     camera = json.loads(camera)
     print("Camera pos before conversion: "+str(camera.get("position")) + "\n Camera quaternion: "+ str(camera.get("quaternion")))
     
@@ -127,8 +129,7 @@ def convert_camera_coors(position,quaternion):
     quaternion = np.array([quaternion['w'], quaternion['z'], quaternion['y'], quaternion['x']]) #X and Z axes get swapped from ThreeJS to OpenGL
     pose = np.eye(4)
     pose[:3, 3] = position
-    # Convert quaternion to rotation matrix and set it in the pose matrix
-    rotation = Rotation.from_quat(quaternion).as_matrix()  # Convert quaternion to 3x3 rotation matrix
+    rotation = Rotation.from_quat(quaternion).as_matrix()  
     pose[:3, :3] = rotation
     return pose
 

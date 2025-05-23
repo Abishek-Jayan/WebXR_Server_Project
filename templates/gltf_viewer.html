@@ -60,30 +60,13 @@
         rightSprite.layers.set(2);
         camera.add(rightSprite); // Attach to camera
 
-        scene.add(camera);
+        scene.add(camera); // Ensure camera is in the scene
         camera.layers.enable(1);
         camera.layers.enable(2);
 
-        let lastPosition = camera.position.clone();
-        let lastQuaternion = camera.quaternion.clone();
 
         renderer.setAnimationLoop(() => {
             renderer.render(scene, camera);
-            if (renderer.xr.isPresenting) {
-                    const start = performance.now();
-                    const posChanged = !camera.position.equals(lastPosition);
-                    const quatChanged = !camera.quaternion.equals(lastQuaternion);
-                    if (posChanged || quatChanged) {
-                        socket.emit('camera_data', JSON.stringify({
-                            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-                        }));
-                        lastPosition.copy(camera.position);
-                        lastQuaternion.copy(camera.quaternion);
-                        const end = performance.now();
-                        console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
-                    }
-                }
         });
 
         socket.on('image_update', (data) => {
@@ -108,10 +91,28 @@
 
         });
 
-
+        let lastPosition = camera.position.clone();
+        let lastQuaternion = camera.quaternion.clone();
 
         renderer.xr.addEventListener('sessionstart', () => {
             console.log("VR session started");
+            setInterval(() => {
+                if (renderer.xr.isPresenting) {
+                    const start = performance.now();
+                    const posChanged = !camera.position.equals(lastPosition);
+                    const quatChanged = !camera.quaternion.equals(lastQuaternion);
+                    if (posChanged || quatChanged) {
+                        socket.emit('camera_data', JSON.stringify({
+                            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+                        }));
+                        lastPosition.copy(camera.position);
+                        lastQuaternion.copy(camera.quaternion);
+                        const end = performance.now();
+                        console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
+                    }
+                }
+            }, 1000 / 20); // 20 Hz
         });
     </script>
 </body>

@@ -67,7 +67,6 @@ scene.add_node(camera_node)
 buffered = BytesIO()
 r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 buffered = BytesIO()
-last_emit_time = 0
 
 
 
@@ -100,7 +99,6 @@ def handle_disconnect():
 @socketio.on('camera_data')
 def update_camera(camera):
     print("Recieved new camera data")
-    global last_emit_time
     current_time = time.time()
 
     camera = json.loads(camera)
@@ -113,15 +111,15 @@ def update_camera(camera):
     pose = convert_camera_coors(position,quaternion)
     print("Camera after conversion: "+ str(pose))
 
-    end_time = time.time()
-    print(f"Camera Coordinates conversion from frontend to backend: {(end_time - start_time)*1000:.2f} ms")
+
     left_future = eventlet.spawn(render_scene,pose,-0.03)
     right_future = eventlet.spawn(render_scene,pose,0.03)
     left_img_str = left_future.wait()
     right_img_str = right_future.wait()
     socketio.emit('image_update', {'left_image': left_img_str, 'right_image': right_img_str})
+    end_time = time.time()
+    print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
     print("Finished rendering the new scenes")
-    last_emit_time = current_time
 
 
 def convert_camera_coors(position,quaternion):

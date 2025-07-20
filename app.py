@@ -6,7 +6,7 @@ import eventlet
 import eventlet.wsgi
 import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
-
+os.environ["EGL_PLATFORM"]="surfaceless"
 import pyrender
 import OpenGL
 print("OpenGL platform:", OpenGL.platform.PLATFORM)
@@ -75,11 +75,12 @@ def render_scene(pose, eye_offset = 0.0):
     adjusted_pose = pose.copy()
     adjusted_pose[0,3] += eye_offset
     scene.set_pose(camera_node, adjusted_pose)
-    color, _ = r.render(scene)
+    color, depth = r.render(scene)
     rgba = np.concatenate([color, np.full((color.shape[0], color.shape[1], 1), 255, dtype=np.uint8)], axis=2)
     end_time = time.time()
     print(f"render_scene time (eye_offset={eye_offset}): {(end_time - start_time)*1000:.2f} ms")
-    return rgba.tobytes()
+    return rgba.tobytes(), depth.astype(np.float32).tobytes()
+
 
 
 # Serve the main HTML page
@@ -114,9 +115,9 @@ def update_camera(camera):
 
     left_future = eventlet.spawn(render_scene,pose,-0.03)
     right_future = eventlet.spawn(render_scene,pose,0.03)
-    left_img_str = left_future.wait()
-    right_img_str = right_future.wait()
-    socketio.emit('image_update', {'left_image': left_img_str, 'right_image': right_img_str})
+    left_img_str, left_depth = left_future.wait()
+    right_img_str, right_depth = right_future.wait()
+    socketio.emit('image_update', {'left_image': left_img_str, 'left_depth': left_depth, 'right_image': right_img_str, 'right_depth': right_depth})
     end_time = time.time()
     print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
     print("Finished rendering the new scenes")

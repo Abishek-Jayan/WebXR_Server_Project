@@ -13,6 +13,12 @@
 <body>
     <script type="module">
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
+
+        
+
+       
+
+
         const socket = io();
 
 
@@ -24,10 +30,64 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
+        let lastPose = new THREE.Matrix4();
 
         const width = 320;  // Match server render resolution
         const height = 180;
         
+
+        const reprojectionShader = {
+            uniforms: {
+                colorTexture: { value: null },
+                depthTexture: { value: null },
+                lastPose: { value: new THREE.Matrix4() },
+                currentPose: { value: new THREE.Matrix4() },
+                projectionMatrix: { value: camera.projectionMatrix }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D colorTexture;
+                uniform sampler2D depthTexture;
+                uniform mat4 lastPose;
+                uniform mat4 currentPose;
+                uniform mat4 projectionMatrix;
+                varying vec2 vUv;
+
+                void main() {
+                    float depth = texture2D(depthTexture, vUv).r;
+                    if (depth == 0.0) { // Handle background
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                        return;
+                    }
+
+                    // Reconstruct 3D point
+                    vec4 ndc = vec4(vUv * 2.0 - 1.0, (depth * 2.0 - 1.0), 1.0);
+                    vec4 worldPos = inverse(projectionMatrix * lastPose) * ndc;
+                    worldPos /= worldPos.w;
+
+                    // Transform to new view
+                    vec4 newPos = projectionMatrix * currentPose * worldPos;
+                    newPos /= newPos.w;
+
+                    // Project to UV space
+                    vec2 newUv = newPos.xy * 0.5 + 0.5;
+                    if (newUv.x < 0.0 || newUv.x > 1.0 || newUv.y < 0.0 || newUv.y > 1.0) {
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Out of bounds
+                        return;
+                    }
+
+                    gl_FragColor = texture2D(colorTexture, newUv);
+                }
+            `
+        };
+
+
         socket.on('connect', () => {
             console.log("Connected to server");
             socket.emit('camera_data', JSON.stringify({
@@ -44,6 +104,21 @@
         leftTexture.magFilter = THREE.LinearFilter;
         const leftMaterial = new THREE.SpriteMaterial({ map: leftTexture });
         const leftSprite = new THREE.Sprite(leftMaterial);
+
+         const leftReprojectMaterial = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(reprojectionShader.uniforms),
+            vertexShader: reprojectionShader.vertexShader,
+            fragmentShader: reprojectionShader.fragmentShader
+        });
+        leftSprite.material = leftReprojectMaterial;
+
+        const rightReprojectMaterial = new THREE.ShaderMaterial({
+            uniforms: THREE.UniformsUtils.clone(reprojectionShader.uniforms),
+            vertexShader: reprojectionShader.vertexShader,
+            fragmentShader: reprojectionShader.fragmentShader
+        });
+
+
         leftSprite.scale.set(16, 9, 1);
         leftSprite.position.set(-0.03, 0, -1); // Closer to camera
         leftSprite.layers.set(1);
@@ -58,6 +133,7 @@
         rightSprite.scale.set(16, 9, 1);
         rightSprite.position.set(0.03, 0, -1); // Closer to camera
         rightSprite.layers.set(2);
+        rightSprite.material = rightReprojectMaterial;
         camera.add(rightSprite); // Attach to camera
 
         scene.add(camera); // Ensure camera is in the scene
@@ -66,6 +142,17 @@
 
 
         renderer.setAnimationLoop(() => {
+            if (window.lastLeft && window.lastRight) {
+            leftReprojectMaterial.uniforms.colorTexture.value = window.lastLeft.color;
+            leftReprojectMaterial.uniforms.depthTexture.value = window.lastLeft.depth;
+            leftReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
+            leftReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
+                
+            rightReprojectMaterial.uniforms.colorTexture.value = window.lastRight.color;
+            rightReprojectMaterial.uniforms.depthTexture.value = window.lastRight.depth;
+            rightReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
+            rightReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
+            }
             renderer.render(scene, camera);
         });
 
@@ -75,7 +162,8 @@
 
             const leftRGBA = new Uint8Array(data.left_image);
             const rightRGBA = new Uint8Array(data.right_image);
-
+            const leftDepth = new Float32Array(data.left_depth);
+            const rightDepth = new Float32Array(data.right_depth);
             // Verify data size
 
             // Update texture data
@@ -84,9 +172,20 @@
             leftTexture.needsUpdate = true;
             rightTexture.needsUpdate = true;
 
+
+            const leftDepthTexture = new THREE.DataTexture(leftDepth, width, height, THREE.RedFormat, THREE.FloatType);
+            const rightDepthTexture = new THREE.DataTexture(rightDepth,width,height, THREE.RedFormat, THREE.FloatType);
+            leftDepthTexture.needsUpdate = true;
+            rightDepthTexture.needsUpdate = true;
+
+            //Store for reprojection
+            window.lastLeft = { color: leftTexture, depth: leftDepthTexture };
+            window.lastRight = { color: rightTexture, depth: rightDepthTexture };
             // Log pixel data for debugging
+            lastPose.copy(camera.matrixWorld);
             console.log("Updated new images");
             const end = performance.now();
+            
             console.log(`Image update processing time: ${(end - start).toFixed(2)} ms`);
 
         });
@@ -112,7 +211,7 @@
                         console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
                     }
                 }
-            }, 1000 / 20); // 20 Hz
+            }, 66); // 15 fps
         });
     </script>
 </body>

@@ -8,16 +8,11 @@ import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 os.environ["EGL_PLATFORM"]="surfaceless"
 import pyrender
-import OpenGL
-print("OpenGL platform:", OpenGL.platform.PLATFORM)
-assert 'egl' in str(OpenGL.platform.PLATFORM).lower(), "EGL backend not loaded!"
 
 import trimesh
-from PIL import Image
 import numpy as np
 import pickle
 from scipy.spatial.transform import Rotation  # For quaternion to rotation matrix
-import base64
 from io import BytesIO
 
 app = Flask(__name__)
@@ -42,8 +37,8 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
-SCREEN_WIDTH = 320
-SCREEN_HEIGHT = 180
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 
@@ -65,21 +60,20 @@ scene.add_node(mesh_node)
 scene.add_node(camera_node)
 
 buffered = BytesIO()
-r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
+pyrenderer = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
 buffered = BytesIO()
 
 
 
 def render_scene(pose, eye_offset = 0.0):
-    start_time = time.time()
+    start_time = time.time() #Tracking time taken for function to run
     adjusted_pose = pose.copy()
-    adjusted_pose[0,3] += eye_offset
+    adjusted_pose[0,3] += eye_offset # Displacing the image a little bit to make it parallel to the corresponding eye
     scene.set_pose(camera_node, adjusted_pose)
-    color, depth = r.render(scene)
-    rgba = np.concatenate([color, np.full((color.shape[0], color.shape[1], 1), 255, dtype=np.uint8)], axis=2)
+    color_image, depth_image = pyrenderer.render(scene, flags = pyrender.RenderFlags.RGBA)
     end_time = time.time()
     print(f"render_scene time (eye_offset={eye_offset}): {(end_time - start_time)*1000:.2f} ms")
-    return rgba.tobytes(), depth.astype(np.float32).tobytes()
+    return color_image.tobytes(), depth_image.astype(np.float32).tobytes()
 
 
 
@@ -109,21 +103,19 @@ def update_camera(camera):
     position = camera.get("position")
     quaternion = camera.get("quaternion")
     start_time = time.time()
-    pose = convert_camera_coors(position,quaternion)
+    pose = convert_camera_coords(position,quaternion)
     print("Camera after conversion: "+ str(pose))
 
 
-    left_future = eventlet.spawn(render_scene,pose,-0.03)
-    right_future = eventlet.spawn(render_scene,pose,0.03)
-    left_img_str, left_depth = left_future.wait()
-    right_img_str, right_depth = right_future.wait()
-    socketio.emit('image_update', {'left_image': left_img_str, 'left_depth': left_depth, 'right_image': right_img_str, 'right_depth': right_depth})
+    left_img_color, left_depth = eventlet.spawn(render_scene,pose,-0.03).wait()
+    right_img_color, right_depth =  eventlet.spawn(render_scene,pose,0.03).wait()
+    socketio.emit('image_update', {'left_image': left_img_color, 'left_depth': left_depth, 'right_image': right_img_color, 'right_depth': right_depth})
     end_time = time.time()
     print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
     print("Finished rendering the new scenes")
 
 
-def convert_camera_coors(position,quaternion):
+def convert_camera_coords(position,quaternion):
     position = np.array([position['x'], position['y'], -position['z']])
     quaternion = np.array([quaternion['w'], quaternion['z'], quaternion['y'], quaternion['x']]) #X and Z axes get swapped from ThreeJS to OpenGL
     pose = np.eye(4)

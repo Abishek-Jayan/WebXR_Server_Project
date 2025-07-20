@@ -14,11 +14,6 @@
     <script type="module">
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
 
-        
-
-       
-
-
         const socket = io();
 
 
@@ -32,8 +27,8 @@
         const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
         let lastPose = new THREE.Matrix4();
 
-        const width = 320;  // Match server render resolution
-        const height = 180;
+        const width = 1920;  // Match server render resolution
+        const height = 1080;
         
 
         const reprojectionShader = {
@@ -50,7 +45,8 @@
                     vUv = uv;
                     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                 }
-            `,
+            `
+            ,
             fragmentShader: `
                 uniform sampler2D colorTexture;
                 uniform sampler2D depthTexture;
@@ -61,10 +57,7 @@
 
                 void main() {
                     float depth = texture2D(depthTexture, vUv).r;
-                    if (depth == 0.0) { // Handle background
-                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
-                        return;
-                    }
+                    
 
                     // Reconstruct 3D point
                     vec4 ndc = vec4(vUv * 2.0 - 1.0, (depth * 2.0 - 1.0), 1.0);

@@ -132,21 +132,44 @@
         scene.add(camera); // Ensure camera is in the scene
         camera.layers.enable(1);
         camera.layers.enable(2);
-
+        
+        const POSITION_THRESHOLD = 0.01; // 1 cm
+        const ROTATION_THRESHOLD = THREE.Math.degToRad(30); // 30 degree
+        
+        let lastPosition = camera.position.clone();
+        let lastQuaternion = camera.quaternion.clone();
+        let lastEmitTime = 0;
+        const MIN_INTERVAL = 1000; // ms throttle to avoid spamming
 
         renderer.setAnimationLoop(() => {
-            if (window.lastLeft && window.lastRight) {
+            const now = performance.now();
+
+    const posChanged = camera.position.distanceTo(lastPosition) > POSITION_THRESHOLD;
+    const rotChanged = camera.quaternion.angleTo(lastQuaternion) > ROTATION_THRESHOLD;
+
+    if ((posChanged || rotChanged) && (now - lastEmitTime > MIN_INTERVAL)) {
+        socket.emit('camera_data', JSON.stringify({
+            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+        }));
+        lastEmitTime = now;
+        lastPosition.copy(camera.position);
+        lastQuaternion.copy(camera.quaternion);
+        console.log("Sent new camera pose to backend");
+    }
+    else if (window.lastLeft && window.lastRight) {
             leftReprojectMaterial.uniforms.colorTexture.value = window.lastLeft.color;
             leftReprojectMaterial.uniforms.depthTexture.value = window.lastLeft.depth;
             leftReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
             leftReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
-                
+
             rightReprojectMaterial.uniforms.colorTexture.value = window.lastRight.color;
             rightReprojectMaterial.uniforms.depthTexture.value = window.lastRight.depth;
             rightReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
             rightReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
-            }
-            renderer.render(scene, camera);
+    }
+        renderer.render(scene, camera);
+
         });
 
         socket.on('image_update', (data) => {
@@ -183,28 +206,11 @@
 
         });
 
-        let lastPosition = camera.position.clone();
-        let lastQuaternion = camera.quaternion.clone();
+      
 
         renderer.xr.addEventListener('sessionstart', () => {
             console.log("VR session started");
-            setInterval(() => {
-                if (renderer.xr.isPresenting) {
-                    const start = performance.now();
-                    const posChanged = !camera.position.equals(lastPosition);
-                    const quatChanged = !camera.quaternion.equals(lastQuaternion);
-                    if (posChanged || quatChanged) {
-                        socket.emit('camera_data', JSON.stringify({
-                            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-                        }));
-                        lastPosition.copy(camera.position);
-                        lastQuaternion.copy(camera.quaternion);
-                        const end = performance.now();
-                        console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
-                    }
-                }
-            }, 66); // 15 fps
+            
         });
     </script>
 </body>

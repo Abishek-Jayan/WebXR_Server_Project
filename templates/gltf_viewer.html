@@ -12,6 +12,8 @@
 
 <body>
     <script type="module">
+        const width = {{ SCREEN_WIDTH }};
+        const height = {{ SCREEN_HEIGHT }};
         import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
         const socket = io();
 
@@ -25,8 +27,6 @@
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
 
-        const width = 320;  // Match server render resolution
-        const height = 180;
         
         socket.on('connect', () => {
             console.log("Connected to server");

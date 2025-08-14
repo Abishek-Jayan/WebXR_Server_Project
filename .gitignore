@@ -5,3 +5,4 @@ env/
 *.gltf
 *.glb
 *.pem
+.env

@@ -14,6 +14,8 @@ import numpy as np
 import pickle
 from scipy.spatial.transform import Rotation  # For quaternion to rotation matrix
 from io import BytesIO
+from dotenv import load_dotenv
+load_dotenv()  
 
 app = Flask(__name__)
 # Path to the GLB file
@@ -37,8 +39,8 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
+SCREEN_WIDTH = int(os.getenv("SCREEN_WIDTH", 1920))
+SCREEN_HEIGHT = int(os.getenv("SCREEN_HEIGHT", 1080))
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 
@@ -80,7 +82,8 @@ def render_scene(pose, eye_offset = 0.0):
 # Serve the main HTML page
 @app.route("/")
 def index():
-    return render_template('gltf_viewer.html')
+    return render_template('gltf_viewer.html',SCREEN_WIDTH=SCREEN_WIDTH,
+        SCREEN_HEIGHT=SCREEN_HEIGHT)
 
 @socketio.on('connect')
 def handle_connect():

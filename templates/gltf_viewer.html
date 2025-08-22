@@ -4,214 +4,455 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Model Viewer - Sprite</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js" type="module"></script>
+    <title>Fixed VR Reprojection</title>
+    <script type="importmap">
+    {
+    "imports": {
+        "THREE": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/"
+    }
+    }
+    </script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000;
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+            width: 100%;
+            height: 100%;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            z-index: 1000;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        #stats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        .debug-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+        }
+    </style>
 </head>
 
 <body>
+    <div id="loading">Loading VR Experience...</div>
+    <div id="stats">FPS: <span id="fps">0</span></div>
+    <div class="debug-panel">
+        <h3>Reprojection Debug</h3>
+        <div id="reprojection-status">Waiting for first frame...</div>
+        <div id="camera-position">Position: 0, 0, 0</div>
+        <div id="render-time">Last render: 0ms</div>
+    </div>
+
     <script type="module">
+        import * as THREE from "THREE";
         const width = {{ SCREEN_WIDTH }};
         const height = {{ SCREEN_HEIGHT }};
-        import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
+        import { VRButton } from "three/addons/webxr/VRButton.js";
 
         const socket = io();
 
+        // Setup UI elements
+        const loadingElement = document.getElementById('loading');
+        const fpsElement = document.getElementById('fps');
+        const reprojectionStatus = document.getElementById('reprojection-status');
+        const cameraPositionElement = document.getElementById('camera-position');
+        const renderTimeElement = document.getElementById('render-time');
 
-        const renderer = new THREE.WebGLRenderer();
+        // Initialize renderer with optimal settings
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            powerPreference: "high-performance",
+            alpha: true
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         renderer.xr.enabled = true;
+        renderer.autoClear = true; // Changed back to true to ensure proper clearing
+        
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
-        let lastPose = new THREE.Matrix4();
-
-
+        const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight, 0.1, 1000);
         
+        // Store previous poses for reprojection
+        let lastLeftViewMatrix = new THREE.Matrix4();
+        let lastRightViewMatrix = new THREE.Matrix4();
+        let lastLeftProjectionMatrix = new THREE.Matrix4();
+        let lastRightProjectionMatrix = new THREE.Matrix4();
 
+        // Optimized reprojection shader - FIXED VERSION
         const reprojectionShader = {
             uniforms: {
                 colorTexture: { value: null },
                 depthTexture: { value: null },
-                lastPose: { value: new THREE.Matrix4() },
-                currentPose: { value: new THREE.Matrix4() },
-                projectionMatrix: { value: camera.projectionMatrix }
+                lastViewMatrix: { value: new THREE.Matrix4() },
+                currentViewMatrix: { value: new THREE.Matrix4() },
+                lastProjectionMatrix: { value: new THREE.Matrix4() },
+                currentProjectionMatrix: { value: new THREE.Matrix4() },
+                resolution: { value: new THREE.Vector2(width, height) }
             },
             vertexShader: `
                 varying vec2 vUv;
                 void main() {
                     vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    gl_Position = vec4(position, 1.0);
                 }
-            `
-            ,
+            `,
             fragmentShader: `
                 uniform sampler2D colorTexture;
                 uniform sampler2D depthTexture;
-                uniform mat4 lastPose;
-                uniform mat4 currentPose;
-                uniform mat4 projectionMatrix;
+                uniform mat4 lastViewMatrix;
+                uniform mat4 currentViewMatrix;
+                uniform mat4 lastProjectionMatrix;
+                uniform mat4 currentProjectionMatrix;
+                uniform vec2 resolution;
                 varying vec2 vUv;
 
+                // Reconstruct position from depth - FIXED IMPLEMENTATION
+                vec3 reconstructPosition(vec2 uv, float depth) {
+                    // Convert depth to linear (assuming depth is from 0 to 1)
+                    float z = depth * 2.0 - 1.0; // Back to NDC
+                    
+                    // Reconstruct view position using inverse projection
+                    vec4 clipPos = vec4(uv * 2.0 - 1.0, z, 1.0);
+                    vec4 viewPos = inverse(lastProjectionMatrix) * clipPos;
+                    viewPos /= viewPos.w;
+                    
+                    // Convert to world space using last view matrix
+                    vec4 worldPos = inverse(lastViewMatrix) * vec4(viewPos.xyz, 1.0);
+                    return worldPos.xyz;
+                }
+
                 void main() {
+                    // Sample depth
                     float depth = texture2D(depthTexture, vUv).r;
                     
-
-                    // Reconstruct 3D point
-                    vec4 ndc = vec4(vUv * 2.0 - 1.0, (depth * 2.0 - 1.0), 1.0);
-                    vec4 worldPos = inverse(projectionMatrix * lastPose) * ndc;
-                    worldPos /= worldPos.w;
-
-                    // Transform to new view
-                    vec4 newPos = projectionMatrix * currentPose * worldPos;
-                    newPos /= newPos.w;
-
-                    // Project to UV space
-                    vec2 newUv = newPos.xy * 0.5 + 0.5;
-                    if (newUv.x < 0.0 || newUv.x > 1.0 || newUv.y < 0.0 || newUv.y > 1.0) {
-                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Out of bounds
+                    // // If depth is at far plane, skip reprojection (background)
+                    // if (depth >= 0.999) {
+                    //     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                    //     return;
+                    // }
+                    
+                    // Reconstruct world position from depth
+                    vec3 worldPos = reconstructPosition(vUv, depth);
+                    
+                    // Project to current view space
+                    vec4 currentViewPos = currentViewMatrix * vec4(worldPos, 1.0);
+                    
+                    // Project to current clip space
+                    vec4 currentClipPos = currentProjectionMatrix * currentViewPos;
+                    
+                    // Normalize
+                    if (currentClipPos.w <= 0.0) {
+                        // Point is behind camera, don't render
+                        gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
                         return;
                     }
-
+                    
+                    vec3 ndc = currentClipPos.xyz / currentClipPos.w;
+                    vec2 newUv = ndc.xy * 0.5 + 0.5;
+                    
+                    // // Check if within screen bounds
+                    // if (newUv.x < 0.0 || newUv.x > 1.0 || newUv.y < 0.0 || newUv.y > 1.0) {
+                    //     // Outside view frustum, don't render
+                    //     gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                    //     return;
+                    // }
+                    
+                    // Sample the color texture at reprojected position
                     gl_FragColor = texture2D(colorTexture, newUv);
                 }
             `
         };
 
-
         socket.on('connect', () => {
             console.log("Connected to server");
-            socket.emit('camera_data', JSON.stringify({
-                position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-            }));
+            loadingElement.style.display = 'none';
+            emitCameraData();
         });
-        socket.on('disconnect', () => console.log("Disconnected from server"));
+        
+        socket.on('disconnect', () => {
+            console.log("Disconnected from server");
+            loadingElement.style.display = 'block';
+            loadingElement.textContent = "Disconnected from server";
+        });
 
-        // Create Sprites with DataTextures for left and right eyes
-        const leftData = new Uint8Array(width * height * 4);
-        const leftTexture = new THREE.DataTexture(leftData, width, height, THREE.RGBAFormat);
-        leftTexture.minFilter = THREE.LinearFilter;
-        leftTexture.magFilter = THREE.LinearFilter;
-        const leftMaterial = new THREE.SpriteMaterial({ map: leftTexture });
-        const leftSprite = new THREE.Sprite(leftMaterial);
+        // Create fullscreen quad geometries for left and right eyes
+        const quadGeo = new THREE.PlaneGeometry(2, 2);
 
-         const leftReprojectMaterial = new THREE.ShaderMaterial({
+        // Left eye reprojection material and mesh
+        const leftReprojectMaterial = new THREE.ShaderMaterial({
             uniforms: THREE.UniformsUtils.clone(reprojectionShader.uniforms),
             vertexShader: reprojectionShader.vertexShader,
             fragmentShader: reprojectionShader.fragmentShader
         });
-        leftSprite.material = leftReprojectMaterial;
+        
+        const leftSprite = new THREE.Mesh(quadGeo, leftReprojectMaterial);
+        leftSprite.frustumCulled = false;
+        leftSprite.renderOrder = 1;
+        leftSprite.layers.set(1);
 
+        // Right eye reprojection material and mesh
         const rightReprojectMaterial = new THREE.ShaderMaterial({
             uniforms: THREE.UniformsUtils.clone(reprojectionShader.uniforms),
             vertexShader: reprojectionShader.vertexShader,
             fragmentShader: reprojectionShader.fragmentShader
         });
 
-
-        leftSprite.scale.set(16, 9, 1);
-        leftSprite.position.set(-0.03, 0, -1); // Closer to camera
-        leftSprite.layers.set(1);
-        camera.add(leftSprite); // Attach to camera
-
-        const rightData = new Uint8Array(width * height * 4);
-        const rightTexture = new THREE.DataTexture(rightData, width, height, THREE.RGBAFormat);
-        rightTexture.minFilter = THREE.LinearFilter;
-        rightTexture.magFilter = THREE.LinearFilter;
-        const rightMaterial = new THREE.SpriteMaterial({ map: rightTexture });
-        const rightSprite = new THREE.Sprite(rightMaterial);
-        rightSprite.scale.set(16, 9, 1);
-        rightSprite.position.set(0.03, 0, -1); // Closer to camera
+        const rightSprite = new THREE.Mesh(quadGeo, rightReprojectMaterial);
+        rightSprite.frustumCulled = false;
+        rightSprite.renderOrder = 1;
         rightSprite.layers.set(2);
-        rightSprite.material = rightReprojectMaterial;
-        camera.add(rightSprite); // Attach to camera
 
-        scene.add(camera); // Ensure camera is in the scene
+        // Add sprites to scene (not to camera)
+        scene.add(leftSprite);
+        scene.add(rightSprite);
+        
         camera.layers.enable(1);
         camera.layers.enable(2);
         
-        const POSITION_THRESHOLD = 0.01; // 1 cm
-        const ROTATION_THRESHOLD = THREE.Math.degToRad(30); // 30 degree
+        // Texture storage
+        let leftTexture = null;
+        let rightTexture = null;
+        let leftDepthTexture = null;
+        let rightDepthTexture = null;
+        
+        const POSITION_THRESHOLD = 1;
+        const ROTATION_THRESHOLD = THREE.MathUtils.degToRad(15);
         
         let lastPosition = camera.position.clone();
         let lastQuaternion = camera.quaternion.clone();
         let lastEmitTime = 0;
-        const MIN_INTERVAL = 1000; // ms throttle to avoid spamming
+        const MIN_INTERVAL = 100; // ms between frame requests
+        
+        // Performance monitoring
+        let frameCount = 0;
+        let lastFpsUpdate = 0;
+        
+        // Function to emit camera data
+        function emitCameraData() {
+            socket.emit('camera_data', JSON.stringify({
+                position: { 
+                    x: camera.position.x, 
+                    y: camera.position.y, 
+                    z: camera.position.z 
+                },
+                quaternion: { 
+                    w: camera.quaternion.w, 
+                    x: camera.quaternion.x, 
+                    y: camera.quaternion.y, 
+                    z: camera.quaternion.z 
+                }
+            }));
+            
+            lastEmitTime = performance.now();
+            lastPosition.copy(camera.position);
+            lastQuaternion.copy(camera.quaternion);
+        }
+        
+        // Flag to track if we have received first images
+        let hasReceivedFirstImages = false;
+        let lastRenderTime = 0;
 
-        renderer.setAnimationLoop(() => {
+        // Animation loop with optimized rendering
+        renderer.setAnimationLoop((time) => {
             const now = performance.now();
+            frameCount++;
+            
+            // Update FPS counter every second
+            if (now - lastFpsUpdate >= 1000) {
+                fpsElement.textContent = Math.round(frameCount * 1000 / (now - lastFpsUpdate));
+                frameCount = 0;
+                lastFpsUpdate = now;
+            }
+            
+            let cameras = [];
+            
+            if (renderer.xr.isPresenting) {
+                const xrCamera = renderer.xr.getCamera();
+                cameras = xrCamera.cameras;
+            } else {
+                cameras = [camera, camera];
+            }
+            
+            // Update camera position display
+            cameraPositionElement.textContent = `Position: ${camera.position.x.toFixed(2)}, ${camera.position.y.toFixed(2)}, ${camera.position.z.toFixed(2)}`;
+            
+            // Check if camera has moved enough to warrant an update
+            const posChanged = camera.position.distanceTo(lastPosition) > POSITION_THRESHOLD;
+            const rotChanged = camera.quaternion.angleTo(lastQuaternion) > ROTATION_THRESHOLD;
+            
+            // Send camera data if changed and enough time has passed
+            if ((posChanged || rotChanged) && (now - lastEmitTime > MIN_INTERVAL)) {
+                emitCameraData();
+                reprojectionStatus.textContent = "Requesting new frame from server";
+            } else if (hasReceivedFirstImages) {
+                reprojectionStatus.textContent = "Using reprojection";
+            }
+            
+            // Always update reprojection if we have the data
+            if (hasReceivedFirstImages && leftTexture && rightTexture) {
+                const renderStart = performance.now();
+                
+                // Update left eye reprojection
+                leftReprojectMaterial.uniforms.colorTexture.value = leftTexture;
+                leftReprojectMaterial.uniforms.depthTexture.value = leftDepthTexture;
+                leftReprojectMaterial.uniforms.lastViewMatrix.value.copy(lastLeftViewMatrix);
+                leftReprojectMaterial.uniforms.currentViewMatrix.value.copy(
+                    cameras[0].matrixWorldInverse
+                );
+                leftReprojectMaterial.uniforms.lastProjectionMatrix.value.copy(lastLeftProjectionMatrix);
+                leftReprojectMaterial.uniforms.currentProjectionMatrix.value.copy(
+                    cameras[0].projectionMatrix
+                );
 
-    const posChanged = camera.position.distanceTo(lastPosition) > POSITION_THRESHOLD;
-    const rotChanged = camera.quaternion.angleTo(lastQuaternion) > ROTATION_THRESHOLD;
-
-    if ((posChanged || rotChanged) && (now - lastEmitTime > MIN_INTERVAL)) {
-        socket.emit('camera_data', JSON.stringify({
-            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-        }));
-        lastEmitTime = now;
-        lastPosition.copy(camera.position);
-        lastQuaternion.copy(camera.quaternion);
-        console.log("Sent new camera pose to backend");
-    }
-    else if (window.lastLeft && window.lastRight) {
-            leftReprojectMaterial.uniforms.colorTexture.value = window.lastLeft.color;
-            leftReprojectMaterial.uniforms.depthTexture.value = window.lastLeft.depth;
-            leftReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
-            leftReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
-
-            rightReprojectMaterial.uniforms.colorTexture.value = window.lastRight.color;
-            rightReprojectMaterial.uniforms.depthTexture.value = window.lastRight.depth;
-            rightReprojectMaterial.uniforms.currentPose.value.copy(camera.matrixWorld);
-            rightReprojectMaterial.uniforms.lastPose.value.copy(lastPose);
-    }
-        renderer.render(scene, camera);
-
+                // Update right eye reprojection
+                rightReprojectMaterial.uniforms.colorTexture.value = rightTexture;
+                rightReprojectMaterial.uniforms.depthTexture.value = rightDepthTexture;
+                rightReprojectMaterial.uniforms.lastViewMatrix.value.copy(lastRightViewMatrix);
+                rightReprojectMaterial.uniforms.currentViewMatrix.value.copy(
+                    cameras[1].matrixWorldInverse
+                );
+                rightReprojectMaterial.uniforms.lastProjectionMatrix.value.copy(lastRightProjectionMatrix);
+                rightReprojectMaterial.uniforms.currentProjectionMatrix.value.copy(
+                    cameras[1].projectionMatrix
+                );
+                
+                // Render the scene
+                renderer.render(scene, camera);
+                
+                lastRenderTime = performance.now() - renderStart;
+                renderTimeElement.textContent = `Last render: ${lastRenderTime.toFixed(2)}ms`;
+            } else if (!hasReceivedFirstImages) {
+                // Show loading until first images arrive
+                renderer.clear();
+            }
         });
 
         socket.on('image_update', (data) => {
             const start = performance.now();
-            console.log("New Images Received");
+            
+            if (!hasReceivedFirstImages) {
+                hasReceivedFirstImages = true;
+                loadingElement.style.display = 'none';
+            }
 
+            // Process eye data
             const leftRGBA = new Uint8Array(data.left_image);
             const rightRGBA = new Uint8Array(data.right_image);
             const leftDepth = new Float32Array(data.left_depth);
             const rightDepth = new Float32Array(data.right_depth);
-            // Verify data size
 
-            // Update texture data
-            leftData.set(leftRGBA);
-            rightData.set(rightRGBA);
+            // Create or update textures
+            if (!leftTexture) {
+                leftTexture = new THREE.DataTexture(leftRGBA, width, height, THREE.RGBAFormat);
+                leftTexture.minFilter = THREE.LinearFilter;
+                leftTexture.magFilter = THREE.LinearFilter;
+            } else {
+                leftTexture.image.data.set(leftRGBA);
+            }
             leftTexture.needsUpdate = true;
+
+            if (!rightTexture) {
+                rightTexture = new THREE.DataTexture(rightRGBA, width, height, THREE.RGBAFormat);
+                rightTexture.minFilter = THREE.LinearFilter;
+                rightTexture.magFilter = THREE.LinearFilter;
+            } else {
+                rightTexture.image.data.set(rightRGBA);
+            }
             rightTexture.needsUpdate = true;
 
-
-            const leftDepthTexture = new THREE.DataTexture(leftDepth, width, height, THREE.RedFormat, THREE.FloatType);
-            const rightDepthTexture = new THREE.DataTexture(rightDepth,width,height, THREE.RedFormat, THREE.FloatType);
+            // Create or update depth textures
+            if (!leftDepthTexture) {
+                leftDepthTexture = new THREE.DataTexture(
+                    leftDepth, width, height, THREE.RedFormat, THREE.FloatType
+                );
+                leftDepthTexture.minFilter = THREE.NearestFilter;
+                leftDepthTexture.magFilter = THREE.NearestFilter;
+            } else {
+                leftDepthTexture.image.data.set(leftDepth);
+            }
             leftDepthTexture.needsUpdate = true;
-            rightDepthTexture.needsUpdate = true;
-
-            //Store for reprojection
-            window.lastLeft = { color: leftTexture, depth: leftDepthTexture };
-            window.lastRight = { color: rightTexture, depth: rightDepthTexture };
-            // Log pixel data for debugging
-            lastPose.copy(camera.matrixWorld);
-            console.log("Updated new images");
-            const end = performance.now();
             
+            if (!rightDepthTexture) {
+                rightDepthTexture = new THREE.DataTexture(
+                    rightDepth, width, height, THREE.RedFormat, THREE.FloatType
+                );
+                rightDepthTexture.minFilter = THREE.NearestFilter;
+                rightDepthTexture.magFilter = THREE.NearestFilter;
+            } else {
+                rightDepthTexture.image.data.set(rightDepth);
+            }
+            rightDepthTexture.needsUpdate = true;
+            
+            // Store the camera pose when these images were rendered
+            if (renderer.xr.isPresenting) {
+                const xrCamera = renderer.xr.getCamera();
+                const cameras = xrCamera.cameras;
+                lastLeftViewMatrix.copy(cameras[0].matrixWorldInverse);
+                lastRightViewMatrix.copy(cameras[1].matrixWorldInverse);
+                lastLeftProjectionMatrix.copy(cameras[0].projectionMatrix);
+                lastRightProjectionMatrix.copy(cameras[1].projectionMatrix);
+            } else {
+                lastLeftViewMatrix.copy(camera.matrixWorldInverse);
+                lastRightViewMatrix.copy(camera.matrixWorldInverse);
+                lastLeftProjectionMatrix.copy(camera.projectionMatrix);
+                lastRightProjectionMatrix.copy(camera.projectionMatrix);
+            }
+            
+            const end = performance.now();
             console.log(`Image update processing time: ${(end - start).toFixed(2)} ms`);
-
         });
-
-      
 
         renderer.xr.addEventListener('sessionstart', () => {
             console.log("VR session started");
-            
+            const xrCamera = renderer.xr.getCamera();
+            const cameras = xrCamera.cameras;
+            if (cameras.length > 0) {
+                const fovLeft = THREE.MathUtils.radToDeg(2 * Math.atan(1 / cameras[0].projectionMatrix.elements[5]));
+                const aspectLeft = cameras[0].projectionMatrix.elements[0] / cameras[0].projectionMatrix.elements[5];
+                socket.emit('camera_params', { fov: fovLeft, aspect: aspectLeft });
+            }
+            // Request a frame right away when VR starts
+            emitCameraData();
+        });
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         });
     </script>
 </body>

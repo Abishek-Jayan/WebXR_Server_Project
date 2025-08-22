@@ -118,6 +118,17 @@ def update_camera(camera):
     print("Finished rendering the new scenes")
 
 
+@socketio.on('camera_params')
+def update_camera_params(params):
+    global camera, camera_node
+    fov = params.get('fov', 110)  # Default to 110 if not provided
+    aspect = params.get('aspect', SCREEN_WIDTH / SCREEN_HEIGHT)
+    print(f"Updating camera with FOV: {fov}, Aspect: {aspect}")
+    scene.remove_node(camera_node)
+    camera = pyrender.PerspectiveCamera(yfov=np.deg2rad(fov), aspectRatio=aspect)
+    camera_node = pyrender.Node(camera=camera)
+    scene.add_node(camera_node)
+
 def convert_camera_coords(position,quaternion):
     position = np.array([position['x'], position['y'], -position['z']])
     quaternion = np.array([quaternion['w'], quaternion['z'], quaternion['y'], quaternion['x']]) #X and Z axes get swapped from ThreeJS to OpenGL

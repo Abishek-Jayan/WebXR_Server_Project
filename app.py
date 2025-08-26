@@ -44,8 +44,8 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
-SCREEN_WIDTH = int(os.getenv("SCREEN_WIDTH", 1920))
-SCREEN_HEIGHT = int(os.getenv("SCREEN_HEIGHT", 1080))
+SCREEN_WIDTH = int(os.getenv("SCREEN_WIDTH", 320))
+SCREEN_HEIGHT = int(os.getenv("SCREEN_HEIGHT", 180))
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 
@@ -77,11 +77,15 @@ def render_scene(pose, eye_offset = 0.0):
     adjusted_pose = pose.copy()
     adjusted_pose[0,3] += eye_offset
     scene.set_pose(camera_node, adjusted_pose)
-    color, _ = r.render(scene)
-    rgba = np.concatenate([color, np.full((color.shape[0], color.shape[1], 1), 255, dtype=np.uint8)], axis=2)
-    end_time = time.time()
-    print(f"render_scene time (eye_offset={eye_offset}): {(end_time - start_time)*1000:.2f} ms")
-    return rgba.tobytes()
+    rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA)
+    img = Image.fromarray(rgba, 'RGBA')
+    buffer = BytesIO()
+    img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    img.save(buffer, format="WEBP", quality=95)  # <-- WebP encoding
+    webp_bytes = buffer.getvalue()
+    webp_base64 = base64.b64encode(webp_bytes).decode('utf-8')
+
+    return webp_base64
 
 
 # Serve the main HTML page

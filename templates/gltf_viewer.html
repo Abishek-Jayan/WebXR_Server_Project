@@ -5,22 +5,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Model Viewer - Sprite</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js" type="module"></script>
+    <script type="importmap">
+    {
+    "imports": {
+        "THREE": "https://cdn.jsdelivr.net/npm/three@0.179.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.179.0/examples/jsm/"
+    }
+    }
+    </script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+
 </head>
 
 <body>
     <script type="module">
-        const width = {{ SCREEN_WIDTH }};
-        const height = {{ SCREEN_HEIGHT }};
-        import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/jsm/webxr/VRButton.js';
+        const width = {{SCREEN_WIDTH}};
+        const height = {{SCREEN_HEIGHT}};
+        import { VRButton } from "three/addons/webxr/VRButton.js";
+        import * as THREE from "THREE";
         const socket = io();
 
 
-        const renderer = new THREE.WebGLRenderer();
+        // Initialize renderer with optimal settings
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            powerPreference: "high-performance",
+            alpha: true
+        });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         renderer.xr.enabled = true;
+        renderer.autoClear = true; // Changed back to true to ensure proper clearing
+
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
 
@@ -28,6 +44,7 @@
         const camera = new THREE.PerspectiveCamera(110, window.innerWidth / window.innerHeight);
 
         
+
         socket.on('connect', () => {
             console.log("Connected to server");
             socket.emit('camera_data', JSON.stringify({
@@ -36,10 +53,9 @@
             }));
         });
         socket.on('disconnect', () => console.log("Disconnected from server"));
-
+                
         // Create Sprites with DataTextures for left and right eyes
-        const leftData = new Uint8Array(width * height * 4);
-        const leftTexture = new THREE.DataTexture(leftData, width, height, THREE.RGBAFormat);
+        const leftTexture = new THREE.Texture();
         leftTexture.minFilter = THREE.LinearFilter;
         leftTexture.magFilter = THREE.LinearFilter;
         const leftMaterial = new THREE.SpriteMaterial({ map: leftTexture });
@@ -49,8 +65,7 @@
         leftSprite.layers.set(1);
         camera.add(leftSprite); // Attach to camera
 
-        const rightData = new Uint8Array(width * height * 4);
-        const rightTexture = new THREE.DataTexture(rightData, width, height, THREE.RGBAFormat);
+        const rightTexture = new THREE.Texture();
         rightTexture.minFilter = THREE.LinearFilter;
         rightTexture.magFilter = THREE.LinearFilter;
         const rightMaterial = new THREE.SpriteMaterial({ map: rightTexture });
@@ -69,19 +84,21 @@
             renderer.render(scene, camera);
         });
 
-        socket.on('image_update', (data) => {
+        socket.on('image_update', async (data) => {
             const start = performance.now();
             console.log("New Images Received");
 
-            const leftRGBA = new Uint8Array(data.left_image);
-            const rightRGBA = new Uint8Array(data.right_image);
-
-            // Verify data size
-
-            // Update texture data
-            leftData.set(leftRGBA);
-            rightData.set(rightRGBA);
+            const leftImg = new Image();
+            leftImg.src = "data:image/webp;base64," + data.left_image;
+            await leftImg.decode();
+            
+            const rightImg = new Image();
+            rightImg.src = "data:image/webp;base64," + data.right_image;
+            await rightImg.decode();
+            leftTexture.image = leftImg;
             leftTexture.needsUpdate = true;
+
+            rightTexture.image = rightImg;
             rightTexture.needsUpdate = true;
 
             // Log pixel data for debugging

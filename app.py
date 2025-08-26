@@ -72,11 +72,9 @@ buffered = BytesIO()
 
 
 
-def render_scene(pose, eye_offset = 0.0):
+def render_scene(pose):
     start_time = time.time()
-    adjusted_pose = pose.copy()
-    adjusted_pose[0,3] += eye_offset
-    scene.set_pose(camera_node, adjusted_pose)
+    scene.set_pose(camera_node, pose)
     rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA)
     img = Image.fromarray(rgba, 'RGBA')
     buffer = BytesIO()
@@ -119,11 +117,8 @@ def update_camera(camera):
     print("Camera after conversion: "+ str(pose))
 
 
-    left_future = eventlet.spawn(render_scene,pose,-0.03)
-    right_future = eventlet.spawn(render_scene,pose,0.03)
-    left_img_str = left_future.wait()
-    right_img_str = right_future.wait()
-    socketio.emit('image_update', {'left_image': left_img_str, 'right_image': right_img_str})
+    image_str = render_scene(pose)
+    socketio.emit('image_update', {'image': image_str})
     end_time = time.time()
     print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
     print("Finished rendering the new scenes")

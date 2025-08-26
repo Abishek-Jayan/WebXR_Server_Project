@@ -55,20 +55,19 @@
         socket.on('disconnect', () => console.log("Disconnected from server"));
                 
         // Create Sprites with DataTextures for left and right eyes
-        const leftTexture = new THREE.Texture();
-        leftTexture.minFilter = THREE.LinearFilter;
-        leftTexture.magFilter = THREE.LinearFilter;
-        const leftMaterial = new THREE.SpriteMaterial({ map: leftTexture });
+        const texture = new THREE.Texture();
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        
+        const leftMaterial = new THREE.SpriteMaterial({ map: texture });
         const leftSprite = new THREE.Sprite(leftMaterial);
         leftSprite.scale.set(16, 9, 1);
         leftSprite.position.set(-0.03, 0, -1); // Closer to camera
         leftSprite.layers.set(1);
         camera.add(leftSprite); // Attach to camera
 
-        const rightTexture = new THREE.Texture();
-        rightTexture.minFilter = THREE.LinearFilter;
-        rightTexture.magFilter = THREE.LinearFilter;
-        const rightMaterial = new THREE.SpriteMaterial({ map: rightTexture });
+       
+        const rightMaterial = new THREE.SpriteMaterial({ map: texture });
         const rightSprite = new THREE.Sprite(rightMaterial);
         rightSprite.scale.set(16, 9, 1);
         rightSprite.position.set(0.03, 0, -1); // Closer to camera
@@ -88,19 +87,11 @@
             const start = performance.now();
             console.log("New Images Received");
 
-            const leftImg = new Image();
-            leftImg.src = "data:image/webp;base64," + data.left_image;
-            await leftImg.decode();
-            
-            const rightImg = new Image();
-            rightImg.src = "data:image/webp;base64," + data.right_image;
-            await rightImg.decode();
-            leftTexture.image = leftImg;
-            leftTexture.needsUpdate = true;
-
-            rightTexture.image = rightImg;
-            rightTexture.needsUpdate = true;
-
+            const img = new Image();
+            img.src = "data:image/webp;base64," + data.image;
+            await img.decode();
+            texture.image = img;
+            texture.needsUpdate = true;
             // Log pixel data for debugging
             console.log("Updated new images");
             const end = performance.now();
@@ -129,7 +120,7 @@
                         console.log(`Camera data check/send time: ${(end - start).toFixed(2)} ms`);
                     }
                 }
-            }, 1000 / 20); // 20 Hz
+            }, 1000 / 20); // 50ms
         });
     </script>
 </body>

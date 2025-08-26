@@ -1,8 +1,8 @@
 output_images/
+.env
 ./env/
 env/
 *.pkl
 *.gltf
 *.glb
 *.pem
-.env

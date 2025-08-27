@@ -76,14 +76,14 @@ def render_scene(pose):
     start_time = time.time()
     scene.set_pose(camera_node, pose)
     rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA)
-    img = Image.fromarray(rgba, 'RGBA')
-    buffer = BytesIO()
-    img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    img.save(buffer, format="WEBP", quality=95)  # <-- WebP encoding
-    webp_bytes = buffer.getvalue()
-    webp_base64 = base64.b64encode(webp_bytes).decode('utf-8')
+    # img = Image.fromarray(rgba, 'RGBA')
+    # buffer = BytesIO()
+    # img = img.transpose(Image.FLIP_TOP_BOTTOM)
+    # img.save(buffer, format="WEBP", quality=95)  # <--pp WebP encoding
+    # webp_bytes = buffer.getvalue()
+    # webp_base64 = base64.b64encode(webp_bytes).decode('utf-8')
 
-    return webp_base64
+    return rgba.tobytes()
 
 
 # Serve the main HTML page
@@ -117,8 +117,8 @@ def update_camera(camera):
     print("Camera after conversion: "+ str(pose))
 
 
-    image_str = render_scene(pose)
-    socketio.emit('image_update', {'image': image_str})
+    image_bytes = render_scene(pose)
+    socketio.emit('image_update',image_bytes)
     end_time = time.time()
     print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
     print("Finished rendering the new scenes")

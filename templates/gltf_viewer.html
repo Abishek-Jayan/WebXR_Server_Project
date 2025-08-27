@@ -23,7 +23,7 @@
         const height = {{SCREEN_HEIGHT}};
         import { VRButton } from "three/addons/webxr/VRButton.js";
         import * as THREE from "THREE";
-        const socket = io();
+        const socket = io({transports: ['websocket']});
 
 
         // Initialize renderer with optimal settings
@@ -55,7 +55,9 @@
         socket.on('disconnect', () => console.log("Disconnected from server"));
                 
         // Create Sprites with DataTextures for left and right eyes
-        const texture = new THREE.Texture();
+        const backendData = new Uint8Array(width * height * 4);
+        const texture = new THREE.DataTexture(backendData, width, height, THREE.RGBAFormat);
+        // const texture = new THREE.Texture();
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
         
@@ -104,15 +106,17 @@
             }
         });
 
-        socket.on('image_update', async (data) => {
+        socket.on('image_update', async (arrayBuffer) => {
             const start = performance.now();
             console.log("New Images Received");
-
-            const img = new Image();
-            img.src = "data:image/webp;base64," + data.image;
-            await img.decode();
-            texture.image = img;
+            const backendRGBA = new Uint8Array(arrayBuffer);
+            backendData.set(backendRGBA);
             texture.needsUpdate = true;
+            // const img = new Image();
+            // img.src = "data:image/webp;base64," + data.image;
+            // await img.decode();
+            // texture.image = img;
+            // texture.needsUpdate = true;
             // Log pixel data for debugging
             console.log("Updated new images");
             const end = performance.now();

@@ -24,7 +24,7 @@ load_dotenv()
 
 app = Flask(__name__)
 # Path to the GLB file
-filename = "static/Duck.glb"
+filename = "static/BSP_TORRENS.glb"
 serialized_mesh_file = "serialized_mesh.pkl"
 
 # Initialize Socket.IO
@@ -145,5 +145,5 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     # Wrap with eventlet WSGI server and SSL
     listener = eventlet.listen(('0.0.0.0', port))
-    listener = eventlet.wrap_ssl(listener, certfile='cert.pem', keyfile='key.pem', server_side=True, ciphers='ECDHE-RSA-AES128-GCM-SHA256')
+    listener = eventlet.wrap_ssl(listener, certfile='cert.pem', keyfile='key.pem', server_side=True)
     eventlet.wsgi.server(listener, app)

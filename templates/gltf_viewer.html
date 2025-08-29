@@ -83,7 +83,7 @@
         camera.layers.enable(2);
         marker = new THREE.Mesh(
             new THREE.CircleGeometry(0.25, 32).rotateX(-Math.PI / 2),
-            new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide , transparent: false, opacity: 1.0 })
+            new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide , transparent: true, opacity: 1.0 })
         );
         marker.material.depthTest = false;
         marker.material.depthWrite = false;
@@ -91,12 +91,11 @@
         scene.add(marker);
 
         floor = new THREE.Mesh(
-            new THREE.PlaneGeometry(1000, 1000).rotateX(-Math.PI / 2),
+            new THREE.PlaneGeometry(1000, 1000, 50,50).rotateX(-Math.PI / 2),
             new THREE.MeshBasicMaterial({ color: 0x000000,wireframe: true})
         );
         floor.material.depthTest = false;   // ignores depth buffer
         floor.renderOrder = 999;   
-        // floor.position.y = -1.6; // Put it at "feet height" so it’s not clipping your head
         scene.add(floor);
 
         raycaster = new THREE.Raycaster();

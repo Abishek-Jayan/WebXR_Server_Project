@@ -44,8 +44,8 @@ else:
 with open(serialized_mesh_file, 'wb') as f:
     pickle.dump(mesh,f)
 
-SCREEN_WIDTH = int(os.getenv("SCREEN_WIDTH", 320))
-SCREEN_HEIGHT = int(os.getenv("SCREEN_HEIGHT", 180))
+SCREEN_WIDTH = int(os.getenv("SCREEN_WIDTH"))
+SCREEN_HEIGHT = int(os.getenv("SCREEN_HEIGHT"))
 scene = pyrender.Scene()
 mesh = pyrender.Mesh.from_trimesh(mesh)
 

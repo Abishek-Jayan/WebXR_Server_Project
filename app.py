@@ -6,7 +6,6 @@ import eventlet
 import eventlet.wsgi
 import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
-
 import pyrender
 import OpenGL
 print("OpenGL platform:", OpenGL.platform.PLATFORM)
@@ -26,7 +25,6 @@ app = Flask(__name__)
 # Path to the GLB file
 filename = "static/BSP_TORRENS.glb"
 serialized_mesh_file = "serialized_mesh.pkl"
-
 # Initialize Socket.IO
 socketio = SocketIO(app, async_mode = 'eventlet', cors_allowed_origins='*')
 
@@ -68,6 +66,12 @@ scene.add_node(camera_node)
 
 buffered = BytesIO()
 r = pyrender.OffscreenRenderer(SCREEN_WIDTH, SCREEN_HEIGHT)
+
+from OpenGL.GL import glGetString, GL_RENDERER, GL_VENDOR, GL_VERSION
+print("GL Vendor:", glGetString(GL_VENDOR))  # Should show NVIDIA
+print("GL Renderer:", glGetString(GL_RENDERER))  # Should show RTX 3090
+print("GL Version:", glGetString(GL_VERSION))  # Should show modern OpenGL (e.g., 4.6)
+
 buffered = BytesIO()
 
 
@@ -75,14 +79,7 @@ buffered = BytesIO()
 def render_scene(pose):
     start_time = time.time()
     scene.set_pose(camera_node, pose)
-    rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA)
-    # img = Image.fromarray(rgba, 'RGBA')
-    # buffer = BytesIO()
-    # img = img.transpose(Image.FLIP_TOP_BOTTOM)
-    # img.save(buffer, format="WEBP", quality=95)  # <--pp WebP encoding
-    # webp_bytes = buffer.getvalue()
-    # webp_base64 = base64.b64encode(webp_bytes).decode('utf-8')
-
+    rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA | pyrender.RenderFlags.OFFSCREEN)
     return rgba.tobytes()
 
 
@@ -104,23 +101,15 @@ def handle_disconnect():
 @socketio.on('camera_data')
 def update_camera(camera):
     print("Recieved new camera data")
-    current_time = time.time()
-
-    camera = json.loads(camera)
-    print("Camera pos before conversion: "+str(camera.get("position")) + "\n Camera quaternion: "+ str(camera.get("quaternion")))
-    
-    # Extract position and quaternion
-    position = camera.get("position")
-    quaternion = camera.get("quaternion")
     start_time = time.time()
-    pose = convert_camera_coors(position,quaternion)
-    print("Camera after conversion: "+ str(pose))
-
-
+    camera = json.loads(camera)
+    pose = convert_camera_coors(camera.get("position"),camera.get("quaternion"))
     image_bytes = render_scene(pose)
+    render_end = time.time()
     socketio.emit('image_update',image_bytes)
-    end_time = time.time()
-    print(f"Total time taken: {(end_time - start_time)*1000:.2f} ms")
+    emit_end = time.time()
+    print(f"Render time: {(render_end - start_time)*1000:.2f} ms")
+    print(f"Emit time: {(emit_end - render_end)*1000:.2f} ms")
     print("Finished rendering the new scenes")
 
 

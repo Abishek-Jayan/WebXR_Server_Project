@@ -6,4 +6,5 @@ env/
 *.gltf
 *.glb
 *.pem
+*.pdb
 node_modules/

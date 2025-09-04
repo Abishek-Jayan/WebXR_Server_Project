@@ -13,7 +13,7 @@ import { GLTFLoader } from "./jsm/loaders/GLTFLoader.js";
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
-
+import { PDBLoader } from './jsm/loaders/PDBLoader.js';
 
 const scene = new THREE.Scene();
 let hand1, hand2;
@@ -27,7 +27,98 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.position.set(30, 30, 100);
 
+// instantiate a loader
+// const loader = new PDBLoader();
+// // === Lights (add once, outside the loader if you want) ===
+// const ambientLight = new THREE.AmbientLight(0x404040, 2); // soft white
+// scene.add(ambientLight);
 
+// const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+// directionalLight.position.set(1, 1, 1).normalize();
+// scene.add(directionalLight);
+// // load a PDB resource
+// loader.load(
+// 	// resource URL
+// 	'./8HTI.pdb',
+// 	// called when the resource is loaded
+// 	function ( pdb ) {
+
+//         const geometryAtoms = pdb.geometryAtoms;
+//     const geometryBonds = pdb.geometryBonds;
+//     const json = pdb.json;
+
+//     console.log('This molecule has ' + json.atoms.length + ' atoms');
+
+//     // Atom colors by element
+//     const atomColors = {
+//       H: 0xffffff, // white
+//       C: 0xaaaaaa, // gray
+//       O: 0xff0000, // red
+//       N: 0x0000ff, // blue
+//       S: 0xffff00, // yellow
+//       P: 0xff8000  // orange
+//     };
+
+//     const sphereGeometry = new THREE.IcosahedronGeometry(0.25, 2);
+
+//     // === Atoms ===
+//     for (let i = 0; i < json.atoms.length; i++) {
+//       const atom = json.atoms[i]; // [x, y, z, index, element]
+//       const position = new THREE.Vector3().fromArray(atom, 0);
+//       const element = atom[4]; // element symbol
+//       const color = atomColors[element] || 0xcccccc;
+
+//       const material = new THREE.MeshPhongMaterial({ color });
+//       const atomMesh = new THREE.Mesh(sphereGeometry, material);
+//       atomMesh.position.copy(position);
+//       scene.add(atomMesh);
+//     }
+
+//     // === Bonds ===
+//     const bondPositions = geometryBonds.attributes.position;
+//     const bondMaterial = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+
+//     function createBond(start, end, material) {
+//       const bondLength = start.distanceTo(end);
+//       const bondGeometry = new THREE.CylinderGeometry(0.05, 0.05, bondLength, 8);
+//       const bondMesh = new THREE.Mesh(bondGeometry, material);
+
+//       // Position
+//       const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+//       bondMesh.position.copy(midpoint);
+
+//       // Orientation
+//       const dir = new THREE.Vector3().subVectors(end, start).normalize();
+//       const axis = new THREE.Vector3(0, 1, 0).cross(dir);
+//       const angle = Math.acos(dir.dot(new THREE.Vector3(0, 1, 0)));
+//       bondMesh.quaternion.setFromAxisAngle(axis.normalize(), angle);
+
+//       return bondMesh;
+//     }
+
+//     for (let i = 0; i < bondPositions.count; i += 2) {
+//       const start = new THREE.Vector3().fromBufferAttribute(bondPositions, i);
+//       const end = new THREE.Vector3().fromBufferAttribute(bondPositions, i + 1);
+
+//       const bondMesh = createBond(start, end, bondMaterial.clone());
+//       scene.add(bondMesh);
+//     }
+// 		console.log( 'This molecule has ' + json.atoms.length + ' atoms' );
+
+// 	},
+// 	// called when loading is in progress
+// 	function ( xhr ) {
+
+// 		console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+
+// 	},
+// 	// called when loading has errors
+// 	function ( error ) {
+
+// 		console.log( 'An error happened' );
+
+// 	}
+// );
 
 
 
@@ -200,7 +291,7 @@ water.rotation.x = -Math.PI / 2;
 
 const sky = new Sky();
 sky.scale.setScalar(10000);
-// scene.add(sky);
+scene.add(sky);
 
 let uniforms = sky.material.uniforms;
 uniforms["turbidity"].value = 10;

@@ -11,7 +11,8 @@ import { Sky } from "./jsm/objects/Sky.js";
 import { VRButton} from './jsm/webxr/VRButton.js';
 import { GLTFLoader } from "./jsm/loaders/GLTFLoader.js";
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
-import { XRHandModelFactory } from './jsm/webxr/XRHandModelFactory.js';
+import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
+import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 
 
 const scene = new THREE.Scene();
@@ -47,7 +48,7 @@ renderer.xr.enabled = true;
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 const sessionInit = {
-					requiredFeatures: [ 'hand-tracking' ]
+					optionalFeatures: [ 'hand-tracking' ]
 				};
 
 
@@ -68,28 +69,23 @@ controller1 = renderer.xr.getController( 0 );
 scene.add( controller1 );
 
 controller2 = renderer.xr.getController( 1 );
+
 scene.add( controller2 );
 
-const controllerModelFactory = new XRControllerModelFactory();
-const handModelFactory = new XRHandModelFactory();
+
 
 // Hand 1
-controllerGrip1 = renderer.xr.getControllerGrip( 0 );
-controllerGrip1.add( controllerModelFactory.createControllerModel( controllerGrip1 ) );
-scene.add( controllerGrip1 );
-
 hand1 = renderer.xr.getHand( 0 );
-hand1.add( handModelFactory.createHandModel( hand1 ) );
-
+hand1.add( new OculusHandModel( hand1 ) );
+const handPointer1 = new OculusHandPointerModel( hand1, controller1 );
+hand1.add( handPointer1 );
 scene.add( hand1 );
 
 // Hand 2
-controllerGrip2 = renderer.xr.getControllerGrip( 1 );
-controllerGrip2.add( controllerModelFactory.createControllerModel( controllerGrip2 ) );
-scene.add( controllerGrip2 );
-
 hand2 = renderer.xr.getHand( 1 );
-hand2.add( handModelFactory.createHandModel( hand2 ) );
+hand2.add( new OculusHandModel( hand2 ) );
+const handPointer2 = new OculusHandPointerModel( hand2, controller2 );
+hand2.add( handPointer2 );
 scene.add( hand2 );
 
 const geom = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
@@ -190,11 +186,7 @@ waterFolder
   .name("size");
 waterFolder.open();
 
-// function animate() {
-//   requestAnimationFrame(animate);
-//   render();
-//   stats.update();
-// }
+			
 
 let time;
 function render() {

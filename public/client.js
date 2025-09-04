@@ -158,7 +158,7 @@ function handleControllerMovement() {
 
 
 function movePlayerHorizontal(x, y) {
-  const speed = 0.1;
+  const speed = 1.0;
 
   // Get the headset forward direction
   const dir = new THREE.Vector3(0, 0, -1);
@@ -176,8 +176,8 @@ function movePlayerHorizontal(x, y) {
 
 
 function movePlayerVertical(y) {
-  const verticalSpeed = 0.05; // slower so it feels natural
-  player.position.y += -y * verticalSpeed; 
+  const speed = 1.0;
+  player.position.y += -y * speed; 
   // negative because stick up is usually negative
 }
 

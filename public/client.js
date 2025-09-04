@@ -28,6 +28,9 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(30, 30, 100);
 
 
+
+
+
 const loader = new GLTFLoader();
 loader.load(
   "./BSP_TORRENS.glb", // adjust the path to where your file is
@@ -43,7 +46,7 @@ loader.load(
   }
 );
 
-const renderer = new THREE.WebGLRenderer({antialias:true,powerPreference:"high-performance"});
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
 renderer.xr.enabled = true;
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -51,7 +54,9 @@ const sessionInit = {
 					optionalFeatures: [ 'hand-tracking' ]
 				};
 
-
+const player = new THREE.Group();
+player.add(camera);
+scene.add(player);
 
 
 document.body.appendChild( VRButton.createButton( renderer,sessionInit ) );
@@ -66,27 +71,43 @@ controls.maxDistance = 200.0;
 // controllers
 
 controller1 = renderer.xr.getController( 0 );
-scene.add( controller1 );
+player.add( controller1 );
 
 controller2 = renderer.xr.getController( 1 );
 
-scene.add( controller2 );
+player.add( controller2 );
 
+const controllerModelFactory = new XRControllerModelFactory();
 
+// Controller 1
+controller1 = renderer.xr.getController(0);
+player.add(controller1);
+
+controllerGrip1 = renderer.xr.getControllerGrip(0);
+controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+player.add(controllerGrip1);
+
+// Controller 2
+controller2 = renderer.xr.getController(1);
+player.add(controller2);
+
+controllerGrip2 = renderer.xr.getControllerGrip(1);
+controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+player.add(controllerGrip2);
 
 // Hand 1
 hand1 = renderer.xr.getHand( 0 );
 hand1.add( new OculusHandModel( hand1 ) );
 const handPointer1 = new OculusHandPointerModel( hand1, controller1 );
 hand1.add( handPointer1 );
-scene.add( hand1 );
+player.add( hand1 );
 
 // Hand 2
 hand2 = renderer.xr.getHand( 1 );
 hand2.add( new OculusHandModel( hand2 ) );
 const handPointer2 = new OculusHandPointerModel( hand2, controller2 );
 hand2.add( handPointer2 );
-scene.add( hand2 );
+player.add( hand2 );
 
 const geom = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
 
@@ -97,6 +118,68 @@ line.scale.z = 5;
 controller1.add( line.clone() );
 controller2.add( line.clone() );
 
+function handleControllerMovement() {
+  const session = renderer.xr.getSession();
+  if (!session) return;
+
+  for (const source of session.inputSources) {
+    if (!source.gamepad) continue; // skip if no gamepad
+
+    const axes = source.gamepad.axes; // [xAxis, yAxis, ...]\ 
+    // Apply deadzone (avoid drift)
+    const deadzone = 0.15;
+    if (source.handedness === "left") {
+      // Left controller → XY walking
+      const lx = axes[2] || axes[0]; // left/right stick (varies by headset)
+      const ly = axes[3] || axes[1]; // forward/back stick
+
+      const moveX = Math.abs(lx) > deadzone ? lx : 0;
+      const moveY = Math.abs(ly) > deadzone ? ly : 0;
+
+      if (moveX !== 0 || moveY !== 0) {
+        movePlayerHorizontal(moveX, moveY);
+      }
+    }
+
+        if (source.handedness === "right") {
+      // Right controller → vertical
+      const ry = axes[3] || axes[1] || 0; 
+      // some headsets report right stick Y on axes[1], fallback if needed
+      const vertical = Math.abs(ry) > deadzone ? ry : 0;
+
+      if (vertical !== 0) {
+        movePlayerVertical(vertical);
+      }
+    }
+    
+  }
+}
+
+
+
+function movePlayerHorizontal(x, y) {
+  const speed = 0.1;
+
+  // Get the headset forward direction
+  const dir = new THREE.Vector3(0, 0, -1);
+  dir.applyQuaternion(camera.quaternion);
+  dir.y = 0; // stay horizontal
+  dir.normalize();
+
+  // Strafe direction (right vector)
+  const strafe = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+
+  // Move player rig
+  player.position.addScaledVector(dir, -y * speed);     // forward/back
+  player.position.addScaledVector(strafe, x * speed);   // left/right
+}
+
+
+function movePlayerVertical(y) {
+  const verticalSpeed = 0.05; // slower so it feels natural
+  player.position.y += -y * verticalSpeed; 
+  // negative because stick up is usually negative
+}
 
 const sun = new THREE.Vector3();
 const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
@@ -202,6 +285,7 @@ function render() {
 }
 
 renderer.setAnimationLoop(function () {
+  handleControllerMovement();
   render();
   stats.update();
 });

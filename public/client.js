@@ -371,7 +371,6 @@ function render() {
   cube.rotation.z = time * 0.51;
 
   water.material.uniforms["time"].value += 1.0 / 60.0;
-
   renderer.render(scene, camera);
 }
 

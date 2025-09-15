@@ -14,13 +14,14 @@
     }
     </script>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
 
 </head>
 
 <body>
     <script type="module">
-        const width = {{SCREEN_WIDTH}};
-        const height = {{SCREEN_HEIGHT}};
+        const width = 1920;
+        const height = 1080;
         import { VRButton } from "three/addons/webxr/VRButton.js";
         import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
         import * as THREE from "three";
@@ -182,7 +183,8 @@ function onSelectEnd() {
         socket.on('image_update', async (arrayBuffer) => {
             const start = performance.now();
             console.log("New Images Received");
-            const backendRGBA = new Uint8Array(arrayBuffer);
+            const backendRGBA = msgpack.decode(new Uint8Array(arrayBuffer)).data;
+            console.log(backendRGBA);
             backendData.set(backendRGBA);
             texture.needsUpdate = true;
             console.log("Updated new images");

@@ -1,15 +1,29 @@
 
 import time
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit
-import eventlet
-import eventlet.wsgi
+# from flask import Flask, render_template
+# from flask_socketio import SocketIO, emit
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+import socketio
+# import eventlet
+# import eventlet.wsgi
 import os,json
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 import pyrender
 import OpenGL
 print("OpenGL platform:", OpenGL.platform.PLATFORM)
 assert 'egl' in str(OpenGL.platform.PLATFORM).lower(), "EGL backend not loaded!"
+
+
+import msgpack
+import msgpack_numpy as m
+
+import ssl
+
 
 import trimesh
 from PIL import Image
@@ -21,13 +35,18 @@ from io import BytesIO
 from dotenv import load_dotenv
 load_dotenv()  
 
-app = Flask(__name__)
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_headers=["*"],
+)
 # Path to the GLB file
 filename = "static/BSP_TORRENS.glb"
 serialized_mesh_file = "serialized_mesh.pkl"
 # Initialize Socket.IO
-socketio = SocketIO(app, async_mode = 'eventlet', cors_allowed_origins='*')
-
+sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins='*')
+asgi_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 # Ensure the GLB file exists
 if not os.path.exists(filename):
@@ -80,33 +99,33 @@ def render_scene(pose):
     start_time = time.time()
     scene.set_pose(camera_node, pose)
     rgba, _ = r.render(scene,flags=pyrender.RenderFlags.RGBA | pyrender.RenderFlags.OFFSCREEN)
-    return rgba.tobytes()
+    rgba_enc = msgpack.packb(rgba, default=m.encode)
+    return rgba_enc
 
 
 # Serve the main HTML page
-@app.route("/")
+@app.get("/")
 def index():
-    return render_template('gltf_viewer.html',SCREEN_WIDTH=SCREEN_WIDTH,
-        SCREEN_HEIGHT=SCREEN_HEIGHT)
+    return FileResponse("templates/gltf_viewer.html")
 
-@socketio.on('connect')
-def handle_connect():
-    print("Client connected:")
+@sio.on('connect')
+async def handle_connect(sid, environ):
+    print("Client connected:", sid)
 
-@socketio.on('disconnect')
-def handle_disconnect():
-    print("Client disconnected:")
+@sio.on('disconnect')
+async def handle_disconnect(sid):
+    print("Client disconnected:", sid)
 
 
-@socketio.on('camera_data')
-def update_camera(camera):
+@sio.on('camera_data')
+async def update_camera(sid,camera):
     print("Recieved new camera data")
     start_time = time.time()
     camera = json.loads(camera)
     pose = convert_camera_coors(camera.get("position"),camera.get("quaternion"))
     image_bytes = render_scene(pose)
     render_end = time.time()
-    socketio.emit('image_update',image_bytes)
+    await sio.emit('image_update',image_bytes, to=sid)
     emit_end = time.time()
     print(f"Render time: {(render_end - start_time)*1000:.2f} ms")
     print(f"Emit time: {(emit_end - render_end)*1000:.2f} ms")
@@ -122,17 +141,14 @@ def convert_camera_coors(position,quaternion):
     pose[:3, :3] = rotation
     return pose
 
-
-# Add CORS headers to all responses
-@app.after_request
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-    return response
-
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
-    # Wrap with eventlet WSGI server and SSL
-    listener = eventlet.listen(('0.0.0.0', port))
-    listener = eventlet.wrap_ssl(listener, certfile='cert.pem', keyfile='key.pem', server_side=True)
-    eventlet.wsgi.server(listener, app)
+    uvicorn.run(
+        "app:asgi_app",
+        host="0.0.0.0",
+        port=port,
+        ssl_certfile="cert.pem",
+        ssl_keyfile="key.pem",
+    workers=1,       # force single process
+    reload=False      # disable auto-reload in prod
+    )

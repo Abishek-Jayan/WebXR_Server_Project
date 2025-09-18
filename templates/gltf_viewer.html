@@ -13,19 +13,25 @@
     }
     }
     </script>
-    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
     <script src="https://rawgit.com/kawanet/msgpack-lite/master/dist/msgpack.min.js"></script>
 
 </head>
 
 <body>
     <script type="module">
-        const width = 1920;
-        const height = 1080;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         import { VRButton } from "three/addons/webxr/VRButton.js";
         import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
         import * as THREE from "three";
-        const socket = io({transports: ['websocket']});
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+            });
+        const video = document.createElement("video");
+        video.autoplay = true;
+        video.playsInline = true;
+        video.muted = true;  // WebRTC requires muted autoplay sometimes
+        const videoTexture = new THREE.VideoTexture(video);
         
 
         // Initialize renderer with optimal settings
@@ -33,7 +39,7 @@
             antialias: true,
             powerPreference: "high-performance",
         });
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         renderer.xr.enabled = true;
         renderer.autoClear = true; // Changed back to true to ensure proper clearing
@@ -46,36 +52,22 @@
         let raycaster, controller1, controller2, controllerGrip1, controllerGrip2;
         let marker, floor, baseReferenceSpace, INTERSECTION;
         const tempMatrix = new THREE.Matrix4();
-        
-        socket.on('connect', () => {
-            console.log("Connected to server");
-            socket.emit('camera_data', JSON.stringify({
-                position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-            }));
-        });
-        socket.on('disconnect', () => console.log("Disconnected from server"));
 
-        // Create Sprites with DataTextures for left and right eyes
-        const backendData = new Uint8Array(width * height * 4);
-        const texture = new THREE.DataTexture(backendData, width, height, THREE.RGBAFormat);
-        // const texture = new THREE.Texture();
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
 
-        const leftMaterial = new THREE.SpriteMaterial({ map: texture });
+        const leftMaterial = new THREE.SpriteMaterial({map:videoTexture});
+        const rightMaterial = new THREE.SpriteMaterial({map:videoTexture});
         const leftSprite = new THREE.Sprite(leftMaterial);
-        leftSprite.scale.set(16, 9, 1);
+        const rightSprite = new THREE.Sprite(rightMaterial);
+
         leftSprite.position.set(-0.03, 0, -1); // Closer to camera
-        leftSprite.layers.set(1);
+        leftSprite.scale.set(16, 9, 1);
+        leftSprite.layers.set(0);
         camera.add(leftSprite); // Attach to camera
 
 
-        const rightMaterial = new THREE.SpriteMaterial({ map: texture });
-        const rightSprite = new THREE.Sprite(rightMaterial);
-        rightSprite.scale.set(16, 9, 1);
         rightSprite.position.set(0.03, 0, -1); // Closer to camera
-        rightSprite.layers.set(2);
+        rightSprite.scale.set(16, 9, 1);
+        rightSprite.layers.set(0);
         camera.add(rightSprite); // Attach to camera
 
         scene.add(camera); // Ensure camera is in the scene
@@ -106,7 +98,7 @@
 
         
         function onSelectStart() { this.userData.isSelecting = true; }
-function onSelectEnd() {
+    function onSelectEnd() {
     this.userData.isSelecting = false;
     if (INTERSECTION) {
         const offsetPosition = { x: -INTERSECTION.x, y: -INTERSECTION.y, z: -INTERSECTION.z, w: 1 };
@@ -160,39 +152,73 @@ function onSelectEnd() {
 
 
             renderer.render(scene, camera);
+        });
 
-            if (renderer.xr.isPresenting && frame) {
-                const now = performance.now();
-                if (now - lastSendTime >= sendInterval) {
-                    const posChanged = !camera.position.equals(lastPosition);
-                    const quatChanged = !camera.quaternion.equals(lastQuaternion);
-                    
-                    if (posChanged || quatChanged) {
-                        socket.emit('camera_data', JSON.stringify({
-                            position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                            quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-                        }));
-                        lastPosition.copy(camera.position);
-                        lastQuaternion.copy(camera.quaternion);
-                        lastSendTime = now;
-                    }
+
+
+        
+        async function startWebRTC() {
+            
+            // Attach remote stream
+            const capabilities = RTCRtpReceiver.getCapabilities('video');
+            const h264Codecs = capabilities.codecs.filter(codec => codec.mimeType === 'video/H264');
+            pc.addTransceiver("video").setCodecPreferences(h264Codecs);
+            pc.ontrack = (event) => {
+                console.log("ontrack fired:", event.track, "streams:", event.streams);
+                video.srcObject = event.streams[0];
+                video.play();
+                video.onplaying = () => console.log("Video is playing");
+                video.onpause = () => console.log("Video paused");
+            
+            };
+
+            pc.onconnectionstatechange = () => console.log("PC state:", pc.connectionState);
+            pc.oniceconnectionstatechange = () => console.log("ICE state:", pc.iceConnectionState);
+            // Create data channel if needed for sending camera updates
+            pc.onicecandidate = (event) => {
+            if (event.candidate) {
+                fetch("/candidate", {
+                method: "POST",
+                body: JSON.stringify({candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex}),
+                headers: { "Content-Type": "application/json" },
+                });
+            }
+            };
+            const dc = pc.createDataChannel("camera");
+            dc.onopen = () => console.log("Data channel open");
+
+            // Send camera updates through data channel instead of socket.emit
+            function sendCameraUpdate() {
+                const posQuat = {
+                    position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                    quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+                };
+                if (dc.readyState === "open") {
+                    dc.send(JSON.stringify(posQuat));
                 }
             }
-        });
 
-        socket.on('image_update', async (arrayBuffer) => {
-            const start = performance.now();
-            console.log("New Images Received");
-            const backendRGBA = msgpack.decode(new Uint8Array(arrayBuffer)).data;
-            console.log(backendRGBA);
-            backendData.set(backendRGBA);
-            texture.needsUpdate = true;
-            console.log("Updated new images");
-            const end = performance.now();
-            console.log(`Image update processing time: ${(end - start).toFixed(2)} ms`);
-            console.log(`Round-trip time since last send: ${(start - lastSendTime).toFixed(2)} ms`);
+            // Periodically send camera updates
+            setInterval(sendCameraUpdate, 50); // 20 Hz
 
-        });
+            // Create offer to backend
+            const offer = await pc.createOffer({ offerToReceiveVideo: true });
+            await pc.setLocalDescription(offer);
+
+            // Send offer to backend
+            const resp = await fetch("/offer", {
+                method: "POST",
+                body: JSON.stringify(pc.localDescription),
+                headers: { "Content-Type": "application/json" },
+            });
+            const answer = await resp.json();
+            await pc.setRemoteDescription(answer);
+        }
+
+        startWebRTC();
+
 
 
 

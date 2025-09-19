@@ -72,11 +72,40 @@ app.add_middleware(
     allow_origins=["*"],
     allow_headers=["*"],
 )
-pc = RTCPeerConnection(
-    RTCConfiguration([
-        RTCIceServer(urls="stun:stun.l.google.com:19302"),
-    ])
-)
+pcs = set()  # track active peer connections
+
+def create_pc():
+    pc = RTCPeerConnection(
+        RTCConfiguration([
+            RTCIceServer(urls="stun:stun.l.google.com:19302"),
+        ])
+    )
+
+    @pc.on("connectionstatechange")
+    async def on_connectionstatechange():
+        print("PC state:", pc.connectionState)
+        if pc.connectionState in ["failed", "closed", "disconnected"]:
+            pcs.discard(pc)
+
+    @pc.on("datachannel")
+    def on_datachannel(channel):
+        if channel.label == "camera":
+            @channel.on("message")
+            def on_message(message):
+                if isinstance(message, bytes):
+                    message = message.decode("utf-8")
+                try:
+                    data = json.loads(message)
+                    pose = convert_camera_coors(data["position"], data["quaternion"])
+                    scene.set_pose(camera_node, pose)
+                except Exception as e:
+                    print("Failed to update camera:", e, "message was:", message)
+
+    pcs.add(pc)
+    return pc
+
+
+
 
 # Path to the GLB file
 filename = "static/BSP_TORRENS.glb"
@@ -109,22 +138,19 @@ mesh_initial_position[0, 3] = 0
 
 mesh_node = pyrender.Node(mesh=mesh, matrix=mesh_initial_position)
 
-@pc.on("connectionstatechange")
-async def on_connectionstatechange():
-    print("PC state:", pc.connectionState)
 
 @app.post("/candidate")
 async def candidate(request: Request):
     data = await request.json()
-    print("Got ICE candidate:", data)
-    if not data.get("candidate"):
-        # Empty string means end-of-candidates, just ignore
-        return {"ok": True}
-    candidate = sdp.candidate_from_sdp(data["candidate"])
-    candidate.sdpMid = data.get("sdpMid")
-    candidate.sdpMLineIndex = data.get("sdpMLineIndex")
-    await pc.addIceCandidate(candidate)
+    if pcs:
+        pc = list(pcs)[-1]  # naive: last created pc
+        if data.get("candidate"):
+            candidate = sdp.candidate_from_sdp(data["candidate"])
+            candidate.sdpMid = data.get("sdpMid")
+            candidate.sdpMLineIndex = data.get("sdpMLineIndex")
+            await pc.addIceCandidate(candidate)
     return {"ok": True}
+
 
 camera = pyrender.PerspectiveCamera(
     yfov=np.deg2rad(110), aspectRatio=SCREEN_WIDTH / SCREEN_HEIGHT
@@ -148,21 +174,6 @@ print("GL Version:", glGetString(GL_VERSION))  # Should show modern OpenGL (e.g.
 buffered = BytesIO()
 
 
-@pc.on("datachannel")
-def on_datachannel(channel):
-    if channel.label == "camera":
-
-        @channel.on("message")
-        def on_message(message):
-            # parse camera data and update camera_node
-            if isinstance(message, bytes):  # decode if needed
-                message = message.decode("utf-8")
-            try:
-                data = json.loads(message)
-                pose = convert_camera_coors(data["position"], data["quaternion"])
-                scene.set_pose(camera_node, pose)
-            except Exception as e:
-                print("Failed to update camera:", e, "message was:", message)
 
 
 @app.post("/offer")
@@ -170,23 +181,20 @@ async def offer(request: Request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
-    await pc.setRemoteDescription(offer)  # First set remote
+    pc = create_pc()  # NEW connection per offer
+
+    await pc.setRemoteDescription(offer)
 
     video_track = PyrenderVideoTrack(r, scene, camera_node)
     sender = pc.addTrack(video_track)
-    # filter capabilities (prefer H264 for higher quality)
+
     codecs = sender.getCapabilities("video").codecs
     preferred = [c for c in codecs if c.mimeType == "video/H264"]
-
-    transciever = pc.getTransceivers()[-1]
-    print(transciever)
-    transciever.setCodecPreferences(preferred)
-
+    pc.getTransceivers()[-1].setCodecPreferences(preferred)
 
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)
     return {"sdp": pc.localDescription.sdp, "type": pc.localDescription.type}
-
 
 # Serve the main HTML page
 @app.get("/")

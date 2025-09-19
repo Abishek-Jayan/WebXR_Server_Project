@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 # from flask import Flask, render_template
@@ -26,7 +27,7 @@ assert "egl" in str(OpenGL.platform.PLATFORM).lower(), "EGL backend not loaded!"
 
 import ssl
 from fastapi import Request
-from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceServer, MediaStreamTrack, RTCConfiguration, sdp
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceServer, MediaStreamTrack, RTCConfiguration, sdp, codecs
 
 import trimesh
 from PIL import Image
@@ -37,8 +38,11 @@ from io import BytesIO
 from dotenv import load_dotenv
 
 load_dotenv()
-
-
+codecs.vpx.DEFAULT_BITRATE=10_000_000
+codecs.vpx.MAX_BITRATE = 10_000_000
+print(codecs.vpx.DEFAULT_BITRATE)
+print(codecs.vpx.MIN_BITRATE)
+print(codecs.vpx.MAX_BITRATE)
 class PyrenderVideoTrack(MediaStreamTrack):
     kind = "video"
 
@@ -59,8 +63,9 @@ class PyrenderVideoTrack(MediaStreamTrack):
             frame = cv2.cvtColor(rgba, cv2.COLOR_RGBA2RGB)
             video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
             video_frame.pts = self.frame_counter
-            video_frame.time_base = Fraction(1,30)
+            video_frame.time_base = Fraction(1,90)
             self.frame_counter += 1
+            await asyncio.sleep(1/90)
             return video_frame
         except Exception as e:
             print(e)
@@ -187,9 +192,8 @@ async def offer(request: Request):
 
     video_track = PyrenderVideoTrack(r, scene, camera_node)
     sender = pc.addTrack(video_track)
-
-    codecs = sender.getCapabilities("video").codecs
-    preferred = [c for c in codecs if c.mimeType == "video/H264"]
+    codec = sender.getCapabilities("video").codecs
+    preferred = [c for c in codec if c.mimeType == "video/H264"]
     pc.getTransceivers()[-1].setCodecPreferences(preferred)
 
     answer = await pc.createAnswer()
@@ -205,7 +209,7 @@ def index():
 def convert_camera_coors(position, quaternion):
     position = np.array([position["x"], position["y"], -position["z"]])
     quaternion = np.array(
-        [quaternion["w"], quaternion["z"], quaternion["y"], quaternion["x"]]
+        [quaternion["w"], -quaternion["z"], quaternion["y"], -quaternion["x"]]
     )  # X and Z axes get swapped from ThreeJS to OpenGL
     pose = np.eye(4)
     pose[:3, 3] = position

@@ -129,6 +129,19 @@
         scene.add(controllerGrip2);
 
 
+        const dc = pc.createDataChannel("camera");
+        dc.onopen = () => console.log("Data channel open");
+        // Send camera updates through data channel instead of socket.emit
+            function sendCameraUpdate() {
+                const posQuat = {
+                    position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+                    quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
+                };
+                if (dc.readyState === "open") {
+                    dc.send(JSON.stringify(posQuat));
+                }
+            }
+
         renderer.setAnimationLoop((timestamp, frame) => {
 
 
@@ -150,7 +163,7 @@
             if (INTERSECTION) marker.position.copy(INTERSECTION);
             marker.visible = INTERSECTION !== undefined;
 
-
+            sendCameraUpdate();
             renderer.render(scene, camera);
         });
 
@@ -171,7 +184,7 @@
                 video.onpause = () => console.log("Video paused");
             
             };
-
+            
             pc.onconnectionstatechange = () => console.log("PC state:", pc.connectionState);
             pc.oniceconnectionstatechange = () => console.log("ICE state:", pc.iceConnectionState);
             // Create data channel if needed for sending camera updates
@@ -186,22 +199,6 @@
                 });
             }
             };
-            const dc = pc.createDataChannel("camera");
-            dc.onopen = () => console.log("Data channel open");
-
-            // Send camera updates through data channel instead of socket.emit
-            function sendCameraUpdate() {
-                const posQuat = {
-                    position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-                    quaternion: { w: camera.quaternion.w, x: camera.quaternion.x, y: camera.quaternion.y, z: camera.quaternion.z }
-                };
-                if (dc.readyState === "open") {
-                    dc.send(JSON.stringify(posQuat));
-                }
-            }
-
-            // Periodically send camera updates
-            setInterval(sendCameraUpdate, 50); // 20 Hz
 
             // Create offer to backend
             const offer = await pc.createOffer({ offerToReceiveVideo: true });

@@ -42,6 +42,9 @@ wss.on("connection", (ws, req) => {
       console.log("Headset registered");
     }
 
+    if (data.move && streamerSocket) {
+      streamerSocket.send(JSON.stringify(data));
+    }
     // relay signaling messages
     if (data.type === "offer") {
       if (headsetSocket) {
@@ -88,7 +91,7 @@ function getLocalIp() {
       }
     }
   }
-  return "localhost";
+  return "10.24.46.139";
 }
 server.listen(PORT, "0.0.0.0", async () => {
   const host = getLocalIp();

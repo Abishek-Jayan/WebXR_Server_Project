@@ -138,8 +138,14 @@ loader.load(
 );
 
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
-renderer.xr.enabled = true;
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = false;
+const renderWidth = 1920; // desired output width
+const renderHeight = 1080; // desired output height
+renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
+renderer.domElement.style.width = window.innerWidth + "px";
+renderer.domElement.style.height = window.innerHeight + "px";
+console.log(renderWidth);
+console.log(renderHeight);
 document.body.appendChild(renderer.domElement);
 const sessionInit = {
 					optionalFeatures: [ 'hand-tracking' ]
@@ -372,16 +378,42 @@ const pc = new RTCPeerConnection({
 
 
 
-const ws = new WebSocket(`wss://localhost:3001`); // connect to server.js
+const ws = new WebSocket(`wss://10.24.46.139:3001`); // connect to server.js
 
 ws.onopen = async () => {
   console.log("Connected to signaling server (streamer)");
   ws.send(JSON.stringify({ role: "streamer" }));
 
+
+  function preferH264(sdp) {
+    const lines = sdp.split("\r\n");
+    const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
+    if (mLineIndex < 0) return sdp;
+    
+    const h264Payload = lines
+        .filter(l => l.includes("H264/90000"))
+        .map(l => l.match(/:(\d+) H264\/90000/)[1])[0];
+
+    if (!h264Payload) return sdp;
+
+    const parts = lines[mLineIndex].split(" ");
+    lines[mLineIndex] = [...parts.slice(0, 3), h264Payload, ...parts.slice(3).filter(p => p !== h264Payload)].join(" ");
+    return lines.join("\r\n");
+}
+
   // Create offer to headset
   const offer = await pc.createOffer({ offerToReceiveVideo: true });
+  offer.sdp = preferH264(offer.sdp);
   await pc.setLocalDescription(offer);
-  
+  pc.getSenders().forEach(sender => {
+    if (sender.track && sender.track.kind === 'video') {
+        let params = sender.getParameters();
+        console.log(params.encodings);
+        if (!params.encodings) params.encodings = [{}];
+        params.encodings[0].maxBitrate = 30_000_000; // 30 Mbps
+        sender.setParameters(params).catch(e => console.warn(e));
+    }
+});
   ws.send(
     JSON.stringify({
       role: "streamer",
@@ -405,7 +437,22 @@ ws.onmessage = async (event) => {
     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
   }
 
-
+  if (data.move === "forward")
+  {
+    camera.translateZ(-1);
+  }
+  else  if (data.move === "backward")
+  {
+    camera.translateZ(1);
+  }
+  else if (data.move === "left")
+  {
+    camera.translateX(1);
+  }
+  else  if (data.move === "right")
+  {
+    camera.translateX(-1);
+  }
   if (data.type === "candidate") {
     console.log("Received ICE candidate from headset");
     try {

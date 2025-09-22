@@ -15,6 +15,7 @@ import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import { PDBLoader } from './jsm/loaders/PDBLoader.js';
 
+
 const scene = new THREE.Scene();
 let hand1, hand2;
 let controller1, controller2;
@@ -124,7 +125,7 @@ camera.position.set(30, 30, 100);
 
 const loader = new GLTFLoader();
 loader.load(
-  "./BSP_TORRENS.glb", // adjust the path to where your file is
+  "/BSP_TORRENS.glb", // adjust the path to where your file is
   function (gltf) {
     const model = gltf.scene;
     model.position.set(0, 0, 0); // adjust position
@@ -132,7 +133,7 @@ loader.load(
     scene.add(model);
   },
   function (error) {
-    console.error("An error occurred while loading the GLB:", error);
+    console.error("An error occurred while loading the GLB:", error.message || error);
   }
 );
 
@@ -368,31 +369,42 @@ const pc = new RTCPeerConnection({
 });
 
 
-const ws = new WebSocket(`wss://${location.host}`); // connect to server.js
 
-ws.onopen = () => {
+
+
+const ws = new WebSocket(`wss://localhost:3001`); // connect to server.js
+
+ws.onopen = async () => {
   console.log("Connected to signaling server (streamer)");
-  ws.send(JSON.stringify({ role: "streamer" })); // register as streamer
+  ws.send(JSON.stringify({ role: "streamer" }));
+
+  // Create offer to headset
+  const offer = await pc.createOffer({ offerToReceiveVideo: true });
+  await pc.setLocalDescription(offer);
+  
+  ws.send(
+    JSON.stringify({
+      role: "streamer",
+      type: "offer",
+      offer: pc.localDescription,
+    })
+  );
+  console.log("Sent offer to server");
+
 };
+
+
+
+
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
 
-  if (data.type === "offer") {
-    console.log("Received offer from headset");
-    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-
-    ws.send(
-      JSON.stringify({
-        role: "streamer",
-        type: "answer",
-        answer: pc.localDescription,
-      })
-    );
+  if (data.type === "answer") {
+    console.log("Received answer from headset");
+    await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
   }
+
 
   if (data.type === "candidate") {
     console.log("Received ICE candidate from headset");

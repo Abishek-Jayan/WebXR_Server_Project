@@ -4,6 +4,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const os = require("os");
 
 const PORT = 3001;
 
@@ -27,7 +28,7 @@ const wss = new WebSocketServer({ server });
 
 let streamerSocket = null;
 let headsetSocket = null;
-
+let pendingOffer = null;
 wss.on("connection", (ws, req) => {
   console.log("New WebSocket connection");
 
@@ -42,10 +43,20 @@ wss.on("connection", (ws, req) => {
     }
 
     // relay signaling messages
+    if (data.type === "offer") {
+      if (headsetSocket) {
+        console.log("Recieved offer from streamer, forwarding it to headset");
+        headsetSocket.send(JSON.stringify(data));
+      } else {
+        console.log("Headset not connected, queuing offer");
+        pendingOffer = data;
+      }
+    }
     if (data.type === "offer" && headsetSocket) {
       headsetSocket.send(JSON.stringify(data));
     }
     if (data.type === "answer" && streamerSocket) {
+      console.log("Recieved offer from headset, forwarding it to streamer");
       streamerSocket.send(JSON.stringify(data));
     }
     if (data.type === "candidate") {
@@ -55,6 +66,11 @@ wss.on("connection", (ws, req) => {
         streamerSocket.send(JSON.stringify(data));
       }
     }
+    if (pendingOffer && ws === headsetSocket) {
+    console.log("Sending queued offer to headset");
+    headsetSocket.send(JSON.stringify(pendingOffer));
+    pendingOffer = null;
+  }
   });
 
   ws.on("close", () => {
@@ -62,7 +78,6 @@ wss.on("connection", (ws, req) => {
     if (ws === headsetSocket) headsetSocket = null;
   });
 });
-const os = require("os");
 
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
@@ -93,7 +108,17 @@ server.listen(PORT, "0.0.0.0", async () => {
   });
 
   // open your Three.js streamer page
-  await browser.newPage().then((page) =>
-    page.goto(`https://localhost:${PORT}/public/streamer.html`)
+  await browser.newPage().then((page) =>{
+      page.on("console", (msg) => {
+    console.log(`📢 [Browser] ${msg.type()}: ${msg.text()}`);
+  });
+  page.on("pageerror", (err) => {
+    console.error("🔥 [Browser Error]", err);
+  });
+  page.on("requestfailed", (req) => {
+    console.error("❌ [Request failed]", req.url(), req.failure().errorText);
+  });
+  page.goto(`https://localhost:${PORT}/`)
+  }
   );
 });

@@ -42,6 +42,9 @@ wss.on("connection", (ws, req) => {
       console.log("Headset registered");
     }
 
+    if (data.xr && streamerSocket) {
+      streamerSocket.send(JSON.stringify(data));
+    }
     if (data.move && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
@@ -93,6 +96,8 @@ function getLocalIp() {
   }
   return "10.24.46.139";
 }
+const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
+
 server.listen(PORT, "0.0.0.0", async () => {
   const host = getLocalIp();
   console.log(`Streamer server running on https://0.0.0.0:${PORT}`);
@@ -101,12 +106,17 @@ server.listen(PORT, "0.0.0.0", async () => {
   const browser = await puppeteer.launch({
     ignoreHTTPSErrors: true,
     headless: true,
+    pipe: true,
+    devtools: true,
     args: [
       "--enable-gpu",
       "--no-sandbox",
       "--use-angle=vulkan",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
+      `--disable-extensions-except=${pathToExtension}`,
+      `--load-extension=${pathToExtension}`,
+      
     ],
   });
 
@@ -115,6 +125,7 @@ server.listen(PORT, "0.0.0.0", async () => {
       page.on("console", (msg) => {
     console.log(`📢 [Browser] ${msg.type()}: ${msg.text()}`);
   });
+
   page.on("pageerror", (err) => {
     console.error("🔥 [Browser Error]", err);
   });

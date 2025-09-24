@@ -8,3 +8,5 @@ env/
 *.pem
 *.pdb
 node_modules/
+Immersive-Web-Emulator-Chrome-Web-Store/
+puppeteer_profile/

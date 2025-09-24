@@ -132,13 +132,18 @@ loader.load(
     model.scale.set(10, 10, 10); // adjust scale
     scene.add(model);
   },
+  undefined,
   function (error) {
     console.error("An error occurred while loading the GLB:", error.message || error);
   }
 );
 
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
-renderer.xr.enabled = false;
+renderer.xr.enabled = true;
+renderer.xr.addEventListener("sessionstart", ()=> {
+  console.log("VR Session Started");
+});
+
 const renderWidth = 1920; // desired output width
 const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
@@ -155,8 +160,8 @@ const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
 
-
-document.body.appendChild( VRButton.createButton( renderer,sessionInit ) );
+const vrButton =  VRButton.createButton( renderer,sessionInit )
+document.body.appendChild(vrButton);
 
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -399,7 +404,7 @@ ws.onopen = async () => {
     const parts = lines[mLineIndex].split(" ");
     lines[mLineIndex] = [...parts.slice(0, 3), h264Payload, ...parts.slice(3).filter(p => p !== h264Payload)].join(" ");
     return lines.join("\r\n");
-}
+  }
 
   // Create offer to headset
   const offer = await pc.createOffer({ offerToReceiveVideo: true });
@@ -413,7 +418,7 @@ ws.onopen = async () => {
         params.encodings[0].maxBitrate = 30_000_000; // 30 Mbps
         sender.setParameters(params).catch(e => console.warn(e));
     }
-});
+  });
   ws.send(
     JSON.stringify({
       role: "streamer",
@@ -431,7 +436,15 @@ ws.onopen = async () => {
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
-
+    if (data.xr === true) {
+  if (vrButton) {
+    console.log("📢 Triggering VRButton click from WS event");
+    vrButton.click();
+    
+  } else {
+    console.warn("⚠️ VRButton not found in DOM");
+  }
+  }
   if (data.type === "answer") {
     console.log("Received answer from headset");
     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));

@@ -23,6 +23,12 @@ document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 renderer.xr.enabled = true;
 
+renderer.xr.addEventListener("sessionstart", ()=> {
+  console.log("VR Session Started");
+    ws.send(JSON.stringify({ xr: true }));
+});
+
+
 // Create a texture from your 2D canvas
 const videoTexture = new THREE.CanvasTexture(canvas);
 videoTexture.minFilter = THREE.LinearFilter;

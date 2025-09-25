@@ -15,7 +15,6 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-camera.position.z = 5;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -45,8 +44,16 @@ const video = document.createElement("video");
 video.autoplay = true;
 video.playsInline = true;
 video.muted = true;  // WebRTC requires muted autoplay sometimes
-
+let pos = new THREE.Vector3();
+let quat = new THREE.Quaternion();
+const xrCamera = renderer.xr.getCamera(camera);
 function drawVideo() {
+    xrCamera.getWorldPosition(pos);
+    xrCamera.getWorldQuaternion(quat);
+    if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
+    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
+    }
     if (video.readyState >= video.HAVE_CURRENT_DATA) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         videoTexture.needsUpdate = true;

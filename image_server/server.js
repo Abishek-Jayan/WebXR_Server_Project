@@ -42,6 +42,9 @@ wss.on("connection", (ws, req) => {
       console.log("Headset registered");
     }
 
+    if (data.type === "pose" && streamerSocket) {
+      streamerSocket.send(JSON.stringify(data));
+    }
     if (data.xr && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }

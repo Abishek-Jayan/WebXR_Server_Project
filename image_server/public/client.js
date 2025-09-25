@@ -149,8 +149,6 @@ const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 renderer.domElement.style.width = window.innerWidth + "px";
 renderer.domElement.style.height = window.innerHeight + "px";
-console.log(renderWidth);
-console.log(renderHeight);
 document.body.appendChild(renderer.domElement);
 const sessionInit = {
 					optionalFeatures: [ 'hand-tracking' ]
@@ -159,7 +157,6 @@ const sessionInit = {
 const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
-
 const vrButton =  VRButton.createButton( renderer,sessionInit )
 document.body.appendChild(vrButton);
 
@@ -445,6 +442,17 @@ ws.onmessage = async (event) => {
     console.warn("⚠️ VRButton not found in DOM");
   }
   }
+  if(data.type === "pose") {
+    player.position.set(data.position.x, data.position.y, data.position.z);
+    player.quaternion.set(
+      data.quaternion.x,
+      data.quaternion.y,
+      data.quaternion.z,
+      data.quaternion.w
+    );
+
+  }
+
   if (data.type === "answer") {
     console.log("Received answer from headset");
     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
@@ -493,21 +501,7 @@ pc.onicecandidate = (event) => {
 const stream = renderer.domElement.captureStream(90);
 stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-// Data channel (to receive headset camera updates)
-pc.ondatachannel = (event) => {
-  const channel = event.channel;
-  channel.onmessage = (e) => {
-    const pose = JSON.parse(e.data);
-    // Apply pose updates if needed
-    camera.position.set(pose.position.x, pose.position.y, pose.position.z);
-    camera.quaternion.set(
-      pose.quaternion.x,
-      pose.quaternion.y,
-      pose.quaternion.z,
-      pose.quaternion.w
-    );
-  };
-};
+
 
 
 function render() {

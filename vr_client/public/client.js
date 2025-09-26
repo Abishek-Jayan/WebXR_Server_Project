@@ -34,11 +34,7 @@ videoTexture.minFilter = THREE.LinearFilter;
 videoTexture.magFilter = THREE.LinearFilter;
 
 
-// Plane to show the video
-const geometry = new THREE.PlaneGeometry(4, 3); // adjust aspect ratio
-const material = new THREE.MeshBasicMaterial({ map: videoTexture });
-const screenMesh = new THREE.Mesh(geometry, material);
-scene.add(screenMesh);
+scene.background = videoTexture;
 
 const video = document.createElement("video");
 video.autoplay = true;
@@ -47,6 +43,22 @@ video.muted = true;  // WebRTC requires muted autoplay sometimes
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
+renderer.setAnimationLoop(() => {
+  xrCamera.getWorldPosition(pos);
+  xrCamera.getWorldQuaternion(quat);
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
+    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
+    }
+    // Update video texture
+  // if (video.readyState >= video.HAVE_CURRENT_DATA) {
+  //   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  // }
+  videoTexture.needsUpdate = true;
+  // Render scene into headset
+  renderer.render(scene, camera);
+  
+});
 function drawVideo() {
     xrCamera.getWorldPosition(pos);
     xrCamera.getWorldQuaternion(quat);

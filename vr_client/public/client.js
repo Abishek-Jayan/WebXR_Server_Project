@@ -15,16 +15,17 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 renderer.xr.enabled = true;
 
+
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
     ws.send(JSON.stringify({ xr: true }));
+
 });
 
 
@@ -33,8 +34,8 @@ const videoTexture = new THREE.CanvasTexture(canvas);
 videoTexture.minFilter = THREE.LinearFilter;
 videoTexture.magFilter = THREE.LinearFilter;
 
-
-scene.background = videoTexture;
+const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
+const videoPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterial);
 
 const video = document.createElement("video");
 video.autoplay = true;
@@ -43,6 +44,9 @@ video.muted = true;  // WebRTC requires muted autoplay sometimes
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
+videoPlane.position.set(0, 0, -0.5);
+camera.add(videoPlane);
+scene.add(camera);
 renderer.setAnimationLoop(() => {
   xrCamera.getWorldPosition(pos);
   xrCamera.getWorldQuaternion(quat);
@@ -51,9 +55,9 @@ renderer.setAnimationLoop(() => {
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
     }
     // Update video texture
-  // if (video.readyState >= video.HAVE_CURRENT_DATA) {
-  //   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  // }
+  if (video.readyState >= video.HAVE_CURRENT_DATA) {
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  }
   videoTexture.needsUpdate = true;
   // Render scene into headset
   renderer.render(scene, camera);

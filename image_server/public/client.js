@@ -217,41 +217,38 @@ line.scale.z = 5;
 controller1.add( line.clone() );
 controller2.add( line.clone() );
 
-function handleControllerMovement() {
-  const session = renderer.xr.getSession();
-  if (!session) return;
+function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
+  
+  
 
-  for (const source of session.inputSources) {
-    if (!source.gamepad) continue; // skip if no gamepad
-
-    const axes = source.gamepad.axes; // [xAxis, yAxis, ...]\ 
-    // Apply deadzone (avoid drift)
     const deadzone = 0.15;
-    if (source.handedness === "left") {
+    if (handedness === "left") {
       // Left controller → XY walking
-      const lx = axes[2] || axes[0]; // left/right stick (varies by headset)
-      const ly = axes[3] || axes[1]; // forward/back stick
-
+      const lx = leftx;
+      const ly = lefty;
       const moveX = Math.abs(lx) > deadzone ? lx : 0;
       const moveY = Math.abs(ly) > deadzone ? ly : 0;
+      console.log(moveX);
+      console.log(moveY);
 
       if (moveX !== 0 || moveY !== 0) {
         movePlayerHorizontal(moveX, moveY);
       }
     }
 
-        if (source.handedness === "right") {
+      if (handedness === "right") {
       // Right controller → vertical
-      const ry = axes[3] || axes[1] || 0; 
+      const ry = righty;
       // some headsets report right stick Y on axes[1], fallback if needed
       const vertical = Math.abs(ry) > deadzone ? ry : 0;
+      console.log(vertical);
 
       if (vertical !== 0) {
         movePlayerVertical(vertical);
       }
     }
     
-  }
+  
 }
 
 
@@ -261,7 +258,7 @@ function movePlayerHorizontal(x, y) {
 
   // Get the headset forward direction
   const dir = new THREE.Vector3(0, 0, -1);
-  dir.applyQuaternion(camera.quaternion);
+  dir.applyQuaternion(player.quaternion);
   dir.y = 0; // stay horizontal
   dir.normalize();
 
@@ -378,8 +375,6 @@ const pc = new RTCPeerConnection({
 
 
 
-
-
 const ws = new WebSocket(`wss://10.24.46.139:3001`); // connect to server.js
 
 ws.onopen = async () => {
@@ -442,8 +437,16 @@ ws.onmessage = async (event) => {
     console.warn("⚠️ VRButton not found in DOM");
   }
   }
+  if (data.type === "left")
+  {
+    handleControllerMovement("left",data.lx,data.ly,0);
+  }
+  if(data.type === "right")
+  {
+    handleControllerMovement("right",0,0,data.ry);
+  }
+
   if(data.type === "pose") {
-    player.position.set(data.position.x, data.position.y, data.position.z);
     player.quaternion.set(
       data.quaternion.x,
       data.quaternion.y,
@@ -516,7 +519,6 @@ function render() {
 }
 
 renderer.setAnimationLoop(function () {
-  handleControllerMovement();
   render();
   stats.update();
 });

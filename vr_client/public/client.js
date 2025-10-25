@@ -122,22 +122,39 @@ function handleControllerMovement() {
 }
 
 // Create a texture from your 2D canvas
-const videoTexture = new THREE.CanvasTexture(canvas);
-videoTexture.minFilter = THREE.LinearFilter;
-videoTexture.magFilter = THREE.LinearFilter;
+const videoTextureLeft = new THREE.CanvasTexture(canvas);
+videoTextureLeft.minFilter = THREE.LinearFilter;
+videoTextureLeft.magFilter = THREE.LinearFilter;
+const videoTextureRight = new THREE.CanvasTexture(canvas);
+videoTextureRight.minFilter = THREE.LinearFilter;
+videoTextureRight.magFilter = THREE.LinearFilter;
 
-const videoMaterial = new THREE.MeshBasicMaterial({ map: videoTexture, side: THREE.DoubleSide });
-const videoPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterial);
+const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, side: THREE.DoubleSide });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, side: THREE.DoubleSide });
 
-const video = document.createElement("video");
-video.autoplay = true;
-video.playsInline = true;
-video.muted = true;  // WebRTC requires muted autoplay sometimes
+const videoPlaneLeft = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterialLeft);
+const videoPlaneRight = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterialRight);
+
+const videoLeft = document.createElement("video");
+const videoRight = document.createElement("video");
+
+videoLeft.autoplay = true;
+videoLeft.playsInline = true;
+videoLeft.muted = true;  // WebRTC requires muted autoplay sometimes
+videoRight.autoplay = true;
+videoRight.playsInline = true;
+videoRight.muted = true;  // WebRTC requires muted autoplay sometimes
+
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
-videoPlane.position.set(0, 0, -0.5);
-camera.add(videoPlane);
+videoPlaneLeft.position.set(0, 0, -0.5);
+videoPlaneRight.position.set(0, 0, -0.5);
+camera.add(videoPlaneLeft);
+camera.add(videoPlaneRight);
+videoPlaneLeft.layers.set(1);
+videoPlaneRight.layers.set(2);
+
 renderer.setAnimationLoop(() => {
   handleControllerMovement();
   xrCamera.getWorldPosition(pos);
@@ -146,11 +163,9 @@ renderer.setAnimationLoop(() => {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
     }
-    // Update video texture
-  if (video.readyState >= video.HAVE_CURRENT_DATA) {
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  }
-  videoTexture.needsUpdate = true;
+
+  videoTextureLeft.needsUpdate = true;
+  videoTextureRight.needsUpdate = true;
   // Render scene into headset
   renderer.render(scene, camera);
   
@@ -162,14 +177,14 @@ function drawVideo() {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
     }
-    if (video.readyState >= video.HAVE_CURRENT_DATA) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        videoTexture.needsUpdate = true;
+    if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
+        ctx.drawImage(videoLeft, 0, 0, canvas.width, canvas.height);
+        videoTextureLeft.needsUpdate = true;
     }
     requestAnimationFrame(drawVideo);
 }
 
-video.addEventListener("playing", () => {
+videoLeft.addEventListener("playing", () => {
     drawVideo();
 });
 const pc = new RTCPeerConnection({
@@ -224,16 +239,25 @@ ws.onmessage = async (event) => {
   }
 };
 
-
+let count = 0;
 pc.ontrack = (event) => {
     console.log("ontrack fired:", event.track, "streams:", event.streams);
-    video.srcObject = event.streams[0];
-    video.play();
-    video.onplaying = () => console.log("Video is playing");
-    video.onpause = () => console.log("Video paused");
+    if (count == 0) {
+      videoLeft.srcObject = event.streams[0];
+      count++;
+    }
+    else if (count == 1) {
+      videoRight.srcObject = event.streams[0];
+      videoLeft.play();
+      videoRight.play();
+    }
+
+    // videoRight.srcObject = event.streams[1];
+    // // videoRight.play();
+    // videoRight.onplaying = () => console.log("Video is playing");
+    // videoRight.onpause = () => console.log("Video paused");
 
 };
-
 
 // Send ICE candidates
 pc.onicecandidate = (event) => {

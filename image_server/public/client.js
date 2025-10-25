@@ -159,6 +159,9 @@ loader.load(
 
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
 renderer.xr.enabled = true;
+const streamRendererLeft = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const streamRendererRight = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
 });
@@ -166,9 +169,18 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 const renderWidth = 1920; // desired output width
 const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
+streamRendererLeft.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
+streamRendererRight.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
+
 renderer.domElement.style.width = window.innerWidth + "px";
 renderer.domElement.style.height = window.innerHeight + "px";
+streamRendererLeft.domElement.style.width = window.innerWidth + "px";
+streamRendererLeft.domElement.style.height = window.innerHeight + "px";
+streamRendererRight.domElement.style.width = window.innerWidth + "px";
+streamRendererRight.domElement.style.height = window.innerHeight + "px";
+
 document.body.appendChild(renderer.domElement);
+
 const sessionInit = {
 					optionalFeatures: [ 'hand-tracking' ]
 				};
@@ -438,7 +450,13 @@ ws.onopen = async () => {
 };
 
 
-
+let newcamLeft = new THREE.PerspectiveCamera();
+let newcamRight = new THREE.PerspectiveCamera();
+let flag = true;
+const newplayer = new THREE.Group();
+newplayer.add(newcamLeft);
+newplayer.add(newcamRight);
+scene.add(newplayer);
 
 
 ws.onmessage = async (event) => {
@@ -460,13 +478,17 @@ ws.onmessage = async (event) => {
   {
     handleControllerMovement("right",0,0,data.ry);
   }
-
   if(data.type === "pose") {
-    player.quaternion.set(
+    newplayer.quaternion.set(
       data.quaternion.x,
       data.quaternion.y,
       data.quaternion.z,
       data.quaternion.w
+    );
+    newplayer.position.set(
+      data.position.x,
+      data.position.y,
+      data.position.z,
     );
 
   }
@@ -478,19 +500,21 @@ ws.onmessage = async (event) => {
 
   if (data.move === "forward")
   {
-    camera.translateZ(-1);
+    console.log("Forward");
+    newplayer.position.add(new THREE.Vector3(0,0,-1));
+
   }
   else  if (data.move === "backward")
   {
-    camera.translateZ(1);
+    newplayer.position.add(new THREE.Vector3(0,0,1));
   }
   else if (data.move === "left")
   {
-    camera.translateX(1);
+    newplayer.position.add(new THREE.Vector3(1,0,0));
   }
   else  if (data.move === "right")
   {
-    camera.translateX(-1);
+    newplayer.position.add(new THREE.Vector3(-1,0,0));
   }
   if (data.type === "candidate") {
     console.log("Received ICE candidate from headset");
@@ -516,13 +540,14 @@ pc.onicecandidate = (event) => {
 };
 
 // Add stream
-const stream = renderer.domElement.captureStream(90);
-stream.getTracks().forEach(track => pc.addTrack(track, stream));
+const streamLeft = streamRendererLeft.domElement.captureStream(90);
+streamLeft.getTracks().forEach(track => pc.addTrack(track, streamLeft));
+const streamRight = streamRendererRight.domElement.captureStream(90);
+streamRight.getTracks().forEach(track => pc.addTrack(track, streamRight));
 
 
 
-
-function render() {
+function render(cam) {
   time = performance.now() * 0.001;
 
   cube.position.y = Math.sin(time) * 20 + 5;
@@ -530,10 +555,25 @@ function render() {
   cube.rotation.z = time * 0.51;
 
   water.material.uniforms["time"].value += 1.0 / 60.0;
-  renderer.render(scene, camera);
+  renderer.render(scene, cam);
 }
-
+let leftcam;
+let rightcam;
 renderer.setAnimationLoop(function () {
-  render();
+  if (!renderer.xr.isPresenting)
+    render(camera);
+  if (renderer.xr.isPresenting) {
+    leftcam = renderer.xr.getCamera().cameras[0];
+    rightcam = renderer.xr.getCamera().cameras[1];
+    if(leftcam && rightcam && flag)
+    { 
+      newcamLeft.projectionMatrix.copy(leftcam.projectionMatrix);
+      newcamRight.projectionMatrix.copy(rightcam.projectionMatrix);
+      flag = false;
+    }
+    streamRendererLeft.render(scene, newcamLeft);
+    streamRendererRight.render(scene,newcamRight);
+  }
+  
   stats.update();
 });

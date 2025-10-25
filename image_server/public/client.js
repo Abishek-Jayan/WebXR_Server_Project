@@ -294,14 +294,14 @@ function movePlayerHorizontal(x, y) {
   const strafe = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
 
   // Move player rig
-  player.position.addScaledVector(dir, -y * speed);     // forward/back
-  player.position.addScaledVector(strafe, x * speed);   // left/right
+  newplayer.position.addScaledVector(dir, -y * speed);     // forward/back
+  newplayer.position.addScaledVector(strafe, x * speed);   // left/right
 }
 
 
 function movePlayerVertical(y) {
   const speed = 1.0;
-  player.position.y += -y * speed; 
+  newplayer.position.y += -y * speed; 
   // negative because stick up is usually negative
 }
 
@@ -485,11 +485,11 @@ ws.onmessage = async (event) => {
       data.quaternion.z,
       data.quaternion.w
     );
-    newplayer.position.set(
-      data.position.x,
-      data.position.y,
-      data.position.z,
-    );
+    // newplayer.position.set(
+    //   data.position.x,
+    //   data.position.y,
+    //   data.position.z,
+    // );
 
   }
 

@@ -252,10 +252,6 @@ pc.ontrack = (event) => {
       videoRight.play();
     }
 
-    // videoRight.srcObject = event.streams[1];
-    // // videoRight.play();
-    // videoRight.onplaying = () => console.log("Video is playing");
-    // videoRight.onpause = () => console.log("Video paused");
 
 };
 

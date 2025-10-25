@@ -164,8 +164,14 @@ renderer.setAnimationLoop(() => {
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
     }
 
-  videoTextureLeft.needsUpdate = true;
-  videoTextureRight.needsUpdate = true;
+    if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
+      ctx.drawImage(videoLeft, 0, 0, canvas.width, canvas.height);
+      videoTextureLeft.needsUpdate = true;
+    }
+    if (videoRight.readyState >= videoRight.HAVE_CURRENT_DATA) {
+      ctx.drawImage(videoRight, 0, 0, canvas.width, canvas.height);
+      videoTextureRight.needsUpdate = true;
+    }
   // Render scene into headset
   renderer.render(scene, camera);
   
@@ -184,9 +190,9 @@ function drawVideo() {
     requestAnimationFrame(drawVideo);
 }
 
-videoLeft.addEventListener("playing", () => {
-    drawVideo();
-});
+// videoLeft.addEventListener("playing", () => {
+//     drawVideo();
+// });
 const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     });

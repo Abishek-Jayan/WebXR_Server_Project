@@ -500,7 +500,6 @@ ws.onmessage = async (event) => {
 
   if (data.move === "forward")
   {
-    console.log("Forward");
     newplayer.position.add(new THREE.Vector3(0,0,-1));
 
   }

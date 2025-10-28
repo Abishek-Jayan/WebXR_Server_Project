@@ -161,7 +161,8 @@ const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-
 renderer.xr.enabled = true;
 const streamRendererLeft = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 const streamRendererRight = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-
+streamRendererLeft.clearColor = new THREE.Color(1, 0, 0); // red tint
+streamRendererRight.clearColor = new THREE.Color(0, 1, 0); // green tint
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
 });
@@ -294,14 +295,14 @@ function movePlayerHorizontal(x, y) {
   const strafe = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
 
   // Move player rig
-  newplayer.position.addScaledVector(dir, -y * speed);     // forward/back
-  newplayer.position.addScaledVector(strafe, x * speed);   // left/right
+  player.position.addScaledVector(dir, -y * speed);     // forward/back // FIXED: changed newplayer to player (assuming this is for local controls; adjust if remote)
+  player.position.addScaledVector(strafe, x * speed);   // left/right
 }
 
 
 function movePlayerVertical(y) {
   const speed = 1.0;
-  newplayer.position.y += -y * speed; 
+  player.position.y += -y * speed; // FIXED: changed newplayer to player
   // negative because stick up is usually negative
 }
 
@@ -450,8 +451,8 @@ ws.onopen = async () => {
 };
 
 
-let newcamLeft = new THREE.PerspectiveCamera();
-let newcamRight = new THREE.PerspectiveCamera();
+let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: initialize with params matching main camera
+let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: same
 let flag = true;
 const newplayer = new THREE.Group();
 newplayer.add(newcamLeft);
@@ -540,10 +541,9 @@ pc.onicecandidate = (event) => {
 
 // Add stream
 const streamLeft = streamRendererLeft.domElement.captureStream(90);
-streamLeft.getTracks().forEach(track => pc.addTrack(track, streamLeft));
+streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
 const streamRight = streamRendererRight.domElement.captureStream(90);
-streamRight.getTracks().forEach(track => pc.addTrack(track, streamRight));
-
+streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 function render(cam) {
@@ -561,17 +561,27 @@ let rightcam;
 renderer.setAnimationLoop(function () {
   if (!renderer.xr.isPresenting)
     render(camera);
+
+  // FIXED: Always render streams (decoupled from local XR); use manual IPD offset
+  const ipd = 0.03;
+  newcamLeft.position.set(-ipd / 2, 0, 0);
+  newcamRight.position.set(ipd / 2, 0, 0);
+  newcamLeft.updateMatrixWorld();
+  newcamRight.updateMatrixWorld();
+
+  const leftPos = new THREE.Vector3().setFromMatrixPosition(newcamLeft.matrixWorld);
+  const rightPos = new THREE.Vector3().setFromMatrixPosition(newcamRight.matrixWorld);
+  const offset = leftPos.distanceTo(rightPos);
+  console.log("👀 Stereo offset between cameras:", offset.toFixed(5), "units"); // Should now log ~0.03000
+
+  streamRendererLeft.render(scene, newcamLeft);
+  streamRendererRight.render(scene, newcamRight);
+
   if (renderer.xr.isPresenting) {
+    // FIXED: Removed copying/offset logic; local XR rendering remains as-is if needed
     leftcam = renderer.xr.getCamera().cameras[0];
     rightcam = renderer.xr.getCamera().cameras[1];
-    if(leftcam && rightcam && flag)
-    { 
-      newcamLeft.projectionMatrix.copy(leftcam.projectionMatrix);
-      newcamRight.projectionMatrix.copy(rightcam.projectionMatrix);
-      flag = false;
-    }
-    streamRendererLeft.render(scene, newcamLeft);
-    streamRendererRight.render(scene,newcamRight);
+    // (Optional: Render local if presenting, but streams are independent now)
   }
   
   stats.update();

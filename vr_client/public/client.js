@@ -5,11 +5,20 @@ import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 
 
-const canvas = document.createElement("canvas");
-document.body.appendChild(canvas);
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-const ctx = canvas.getContext("2d");
+const canvasLeft = document.createElement("canvas");
+const canvasRight = document.createElement("canvas");
+
+const ctxLeft = canvasLeft.getContext("2d");
+const ctxRight = canvasRight.getContext("2d");
+
+
+
+canvasLeft.width = window.innerWidth;
+canvasLeft.height = window.innerHeight;
+canvasRight.width = window.innerWidth;
+canvasRight.height = window.innerHeight;
+
+
 
 let hand1, hand2;
 let controller1, controller2;
@@ -122,10 +131,10 @@ function handleControllerMovement() {
 }
 
 // Create a texture from your 2D canvas
-const videoTextureLeft = new THREE.CanvasTexture(canvas);
+const videoTextureLeft = new THREE.CanvasTexture(canvasLeft);
 videoTextureLeft.minFilter = THREE.LinearFilter;
 videoTextureLeft.magFilter = THREE.LinearFilter;
-const videoTextureRight = new THREE.CanvasTexture(canvas);
+const videoTextureRight = new THREE.CanvasTexture(canvasRight);
 videoTextureRight.minFilter = THREE.LinearFilter;
 videoTextureRight.magFilter = THREE.LinearFilter;
 
@@ -165,34 +174,17 @@ renderer.setAnimationLoop(() => {
     }
 
     if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
-      ctx.drawImage(videoLeft, 0, 0, canvas.width, canvas.height);
+      ctxLeft.drawImage(videoLeft, 0, 0, canvasLeft.width, canvasLeft.height);
       videoTextureLeft.needsUpdate = true;
     }
     if (videoRight.readyState >= videoRight.HAVE_CURRENT_DATA) {
-      ctx.drawImage(videoRight, 0, 0, canvas.width, canvas.height);
+      ctxRight.drawImage(videoRight, 0, 0, canvasRight.width, canvasRight.height);
       videoTextureRight.needsUpdate = true;
     }
   // Render scene into headset
   renderer.render(scene, camera);
   
 });
-function drawVideo() {
-    xrCamera.getWorldPosition(pos);
-    xrCamera.getWorldQuaternion(quat);
-    if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
-    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
-    }
-    if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
-        ctx.drawImage(videoLeft, 0, 0, canvas.width, canvas.height);
-        videoTextureLeft.needsUpdate = true;
-    }
-    requestAnimationFrame(drawVideo);
-}
-
-// videoLeft.addEventListener("playing", () => {
-//     drawVideo();
-// });
 const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     });
@@ -214,10 +206,10 @@ document.addEventListener('keydown',(event) => {
   if(event.key === "a" || event.key === "A")
     ws.send(JSON.stringify({ move: "right" }));
   });
-  
+
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
-
+  
   if (data.type === "offer") {
     console.log("Received offer from streamer");
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -245,20 +237,17 @@ ws.onmessage = async (event) => {
   }
 };
 
-let count = 0;
+let res = [];
 pc.ontrack = (event) => {
     console.log("ontrack fired:", event.track, "streams:", event.streams);
-    if (count == 0) {
-      videoLeft.srcObject = event.streams[0];
-      count++;
-    }
-    else if (count == 1) {
-      videoRight.srcObject = event.streams[0];
+    res.push(event.streams[0]);
+    console.log(res);
+    if (res.length == 2) {
+      videoLeft.srcObject = res[0];
+      videoRight.srcObject = res[1];
       videoLeft.play();
       videoRight.play();
     }
-
-
 };
 
 // Send ICE candidates

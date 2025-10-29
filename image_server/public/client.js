@@ -556,8 +556,6 @@ function render(cam) {
   water.material.uniforms["time"].value += 1.0 / 60.0;
   renderer.render(scene, cam);
 }
-let leftcam;
-let rightcam;
 renderer.setAnimationLoop(function () {
   if (!renderer.xr.isPresenting)
     render(camera);
@@ -577,12 +575,6 @@ renderer.setAnimationLoop(function () {
   streamRendererLeft.render(scene, newcamLeft);
   streamRendererRight.render(scene, newcamRight);
 
-  if (renderer.xr.isPresenting) {
-    // FIXED: Removed copying/offset logic; local XR rendering remains as-is if needed
-    leftcam = renderer.xr.getCamera().cameras[0];
-    rightcam = renderer.xr.getCamera().cameras[1];
-    // (Optional: Render local if presenting, but streams are independent now)
-  }
   
   stats.update();
 });

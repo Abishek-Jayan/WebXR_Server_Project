@@ -40,7 +40,8 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer));
 renderer.xr.enabled = true;
-
+camera.layers.enable(1); // Left eye sees layer 1
+camera.layers.enable(2); // Right eye sees layer 2
 
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
@@ -138,11 +139,19 @@ const videoTextureRight = new THREE.CanvasTexture(canvasRight);
 videoTextureRight.minFilter = THREE.LinearFilter;
 videoTextureRight.magFilter = THREE.LinearFilter;
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, side: THREE.DoubleSide });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, side: THREE.DoubleSide });
+const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, side: THREE.BackSide });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, side: THREE.BackSide });
 
-const videoPlaneLeft = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterialLeft);
-const videoPlaneRight = new THREE.Mesh(new THREE.PlaneGeometry(1, 1.5), videoMaterialRight);
+
+// Create a sphere that surrounds the user
+const radius = 10.0; // Adjust for comfort (1.5–3.0)
+const sphereGeometry = new THREE.SphereGeometry(radius, 60, 40);
+// Invert the faces to render inside
+// sphereGeometry.scale(-1, 1, 1); // Critical: flip normals inward
+
+
+const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
+const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
 
 const videoLeft = document.createElement("video");
 const videoRight = document.createElement("video");
@@ -157,12 +166,10 @@ videoRight.muted = true;  // WebRTC requires muted autoplay sometimes
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
-videoPlaneLeft.position.set(0, 0, -0.5);
-videoPlaneRight.position.set(0, 0, -0.5);
-camera.add(videoPlaneLeft);
-camera.add(videoPlaneRight);
-videoPlaneLeft.layers.set(1);
-videoPlaneRight.layers.set(2);
+player.add(videoSphereLeft);
+player.add(videoSphereRight);
+videoSphereLeft.layers.set(1);
+videoSphereRight.layers.set(2);
 
 renderer.setAnimationLoop(() => {
   handleControllerMovement();
@@ -170,7 +177,7 @@ renderer.setAnimationLoop(() => {
   xrCamera.getWorldQuaternion(quat);
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
-    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));
+    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
     }
 
     if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
@@ -209,7 +216,6 @@ document.addEventListener('keydown',(event) => {
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
-  
   if (data.type === "offer") {
     console.log("Received offer from streamer");
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));

@@ -480,12 +480,12 @@ ws.onmessage = async (event) => {
     handleControllerMovement("right",0,0,data.ry);
   }
   if(data.type === "pose") {
-    newplayer.quaternion.set(
-      data.quaternion.x,
-      data.quaternion.y,
-      data.quaternion.z,
-      data.quaternion.w
-    );
+    // newplayer.quaternion.set(
+    //   data.quaternion.x,
+    //   data.quaternion.y,
+    //   data.quaternion.z,
+    //   data.quaternion.w
+    // );
     // newplayer.position.set(
     //   data.position.x,
     //   data.position.y,

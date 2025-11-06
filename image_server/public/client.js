@@ -14,6 +14,7 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import { PDBLoader } from './jsm/loaders/PDBLoader.js';
+import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 
 
 const scene = new THREE.Scene();
@@ -166,6 +167,9 @@ streamRendererRight.clearColor = new THREE.Color(0, 1, 0); // green tint
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
 });
+
+const equiLeft = new CubemapToEquirectangular(renderer, true);
+const equiRight = new CubemapToEquirectangular(renderer, true);
 
 const renderWidth = 1920; // desired output width
 const renderHeight = 1080; // desired output height
@@ -538,27 +542,27 @@ pc.onicecandidate = (event) => {
     );
   }
 };
+const canvasLeft = document.createElement("canvas");
+const canvasRight = document.createElement("canvas");
+
+canvasLeft.width = renderWidth;
+canvasLeft.height = renderHeight;
+canvasRight.width = renderWidth;
+canvasRight.height = renderHeight;
+
+const ctxLeft = canvasLeft.getContext("2d");
+const ctxRight = canvasRight.getContext("2d");
+
 
 // Add stream
-const streamLeft = streamRendererLeft.domElement.captureStream(90);
+const streamLeft = canvasLeft.captureStream(90);
 streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
-const streamRight = streamRendererRight.domElement.captureStream(90);
+const streamRight = canvasRight.captureStream(90);
 streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
-function render(cam) {
-  time = performance.now() * 0.001;
-
-  cube.position.y = Math.sin(time) * 20 + 5;
-  cube.rotation.x = time * 0.5;
-  cube.rotation.z = time * 0.51;
-
-  water.material.uniforms["time"].value += 1.0 / 60.0;
-  renderer.render(scene, cam);
-}
 renderer.setAnimationLoop(function () {
-  if (!renderer.xr.isPresenting)
-    render(camera);
+
 
   // FIXED: Always render streams (decoupled from local XR); use manual IPD offset
   const ipd = 0.03;
@@ -566,15 +570,13 @@ renderer.setAnimationLoop(function () {
   newcamRight.position.set(ipd / 2, 0, 0);
   newcamLeft.updateMatrixWorld();
   newcamRight.updateMatrixWorld();
+  renderer.render(scene, camera);
+  const imageLeft = equiLeft.update(newcamLeft, scene);
+  const imageRight = equiRight.update(newcamRight, scene);
 
-  const leftPos = new THREE.Vector3().setFromMatrixPosition(newcamLeft.matrixWorld);
-  const rightPos = new THREE.Vector3().setFromMatrixPosition(newcamRight.matrixWorld);
-  const offset = leftPos.distanceTo(rightPos);
-  console.log("👀 Stereo offset between cameras:", offset.toFixed(5), "units"); // Should now log ~0.03000
-
-  streamRendererLeft.render(scene, newcamLeft);
-  streamRendererRight.render(scene, newcamRight);
-
+  if (imageLeft) ctxLeft.putImageData(imageLeft, 0, 0);
+  if (imageRight) ctxRight.putImageData(imageRight, 0, 0);
   
   stats.update();
 });
+

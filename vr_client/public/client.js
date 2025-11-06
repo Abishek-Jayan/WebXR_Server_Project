@@ -12,11 +12,11 @@ const ctxLeft = canvasLeft.getContext("2d");
 const ctxRight = canvasRight.getContext("2d");
 
 
+canvasLeft.width = 4096;
+canvasLeft.height = 2048;
 
-canvasLeft.width = window.innerWidth;
-canvasLeft.height = window.innerHeight;
-canvasRight.width = window.innerWidth;
-canvasRight.height = window.innerHeight;
+canvasRight.width = 4096;
+canvasRight.height = 2048;
 
 
 
@@ -133,21 +133,19 @@ function handleControllerMovement() {
 
 // Create a texture from your 2D canvas
 const videoTextureLeft = new THREE.CanvasTexture(canvasLeft);
-videoTextureLeft.minFilter = THREE.LinearFilter;
-videoTextureLeft.magFilter = THREE.LinearFilter;
-const videoTextureRight = new THREE.CanvasTexture(canvasRight);
-videoTextureRight.minFilter = THREE.LinearFilter;
-videoTextureRight.magFilter = THREE.LinearFilter;
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, side: THREE.BackSide });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, side: THREE.BackSide });
+const videoTextureRight = new THREE.CanvasTexture(canvasRight);
+
+
+const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight});
 
 
 // Create a sphere that surrounds the user
 const radius = 10.0; // Adjust for comfort (1.5–3.0)
 const sphereGeometry = new THREE.SphereGeometry(radius, 60, 40);
 // Invert the faces to render inside
-// sphereGeometry.scale(-1, 1, 1); // Critical: flip normals inward
+sphereGeometry.scale(-1, 1, 1); // Critical: flip normals inward
 
 
 const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);

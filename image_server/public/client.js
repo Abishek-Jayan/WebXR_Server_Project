@@ -545,10 +545,11 @@ pc.onicecandidate = (event) => {
 const canvasLeft = document.createElement("canvas");
 const canvasRight = document.createElement("canvas");
 
-canvasLeft.width = renderWidth;
-canvasLeft.height = renderHeight;
-canvasRight.width = renderWidth;
-canvasRight.height = renderHeight;
+canvasLeft.width = 4096;
+canvasLeft.height = 2048;
+
+canvasRight.width = 4096;
+canvasRight.height = 2048;
 
 const ctxLeft = canvasLeft.getContext("2d");
 const ctxRight = canvasRight.getContext("2d");

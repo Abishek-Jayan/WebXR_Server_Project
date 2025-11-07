@@ -133,9 +133,13 @@ function handleControllerMovement() {
 
 // Create a texture from your 2D canvas
 const videoTextureLeft = new THREE.CanvasTexture(canvasLeft);
-
+videoTextureLeft.minFilter = THREE.LinearMipmapLinearFilter;
+videoTextureLeft.magFilter = THREE.LinearFilter;
+videoTextureLeft.generateMipmaps = true;
 const videoTextureRight = new THREE.CanvasTexture(canvasRight);
-
+videoTextureRight.minFilter = THREE.LinearMipmapLinearFilter;
+videoTextureRight.magFilter = THREE.LinearFilter;
+videoTextureRight.generateMipmaps = true;
 
 const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft });
 const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight});

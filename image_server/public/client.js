@@ -158,12 +158,8 @@ loader.load(
 //   }
 // );
 
-const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance"});
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", preserveDrawingBuffer: true, alpha: false});
 renderer.xr.enabled = true;
-const streamRendererLeft = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-const streamRendererRight = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-streamRendererLeft.clearColor = new THREE.Color(1, 0, 0); // red tint
-streamRendererRight.clearColor = new THREE.Color(0, 1, 0); // green tint
 renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
 });
@@ -171,18 +167,14 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 const equiLeft = new CubemapToEquirectangular(renderer, true);
 const equiRight = new CubemapToEquirectangular(renderer, true);
 
-const renderWidth = 1920; // desired output width
-const renderHeight = 1080; // desired output height
+const renderWidth = 4096; // desired output width
+const renderHeight = 2048; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
-streamRendererLeft.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
-streamRendererRight.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
+
 
 renderer.domElement.style.width = window.innerWidth + "px";
 renderer.domElement.style.height = window.innerHeight + "px";
-streamRendererLeft.domElement.style.width = window.innerWidth + "px";
-streamRendererLeft.domElement.style.height = window.innerHeight + "px";
-streamRendererRight.domElement.style.width = window.innerWidth + "px";
-streamRendererRight.domElement.style.height = window.innerHeight + "px";
+
 
 document.body.appendChild(renderer.domElement);
 
@@ -439,7 +431,7 @@ ws.onopen = async () => {
     if (sender.track && sender.track.kind === 'video') {
         let params = sender.getParameters();
         if (!params.encodings) params.encodings = [{}];
-        params.encodings[0].maxBitrate = 30_000_000; // 30 Mbps
+        params.encodings[0].maxBitrate = 50_000_000; // 30 Mbps
         sender.setParameters(params).catch(e => console.warn(e));
     }
   });
@@ -457,6 +449,9 @@ ws.onopen = async () => {
 
 let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: initialize with params matching main camera
 let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: same
+const ipd = 0.03;
+newcamLeft.position.set(-ipd / 2, 0, 0);
+newcamRight.position.set(ipd / 2, 0, 0);
 let flag = true;
 const newplayer = new THREE.Group();
 newplayer.add(newcamLeft);
@@ -483,13 +478,13 @@ ws.onmessage = async (event) => {
   {
     handleControllerMovement("right",0,0,data.ry);
   }
-  if(data.type === "pose") {
-    // newplayer.quaternion.set(
-    //   data.quaternion.x,
-    //   data.quaternion.y,
-    //   data.quaternion.z,
-    //   data.quaternion.w
-    // );
+ if(data.type === "pose") {
+    newplayer.quaternion.set(
+      data.quaternion.x,
+      data.quaternion.y,
+      data.quaternion.z,
+      data.quaternion.w
+    );
     // newplayer.position.set(
     //   data.position.x,
     //   data.position.y,
@@ -503,23 +498,7 @@ ws.onmessage = async (event) => {
     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
   }
 
-  if (data.move === "forward")
-  {
-    newplayer.position.add(new THREE.Vector3(0,0,-1));
-
-  }
-  else  if (data.move === "backward")
-  {
-    newplayer.position.add(new THREE.Vector3(0,0,1));
-  }
-  else if (data.move === "left")
-  {
-    newplayer.position.add(new THREE.Vector3(1,0,0));
-  }
-  else  if (data.move === "right")
-  {
-    newplayer.position.add(new THREE.Vector3(-1,0,0));
-  }
+  
   if (data.type === "candidate") {
     console.log("Received ICE candidate from headset");
     try {
@@ -562,16 +541,23 @@ const streamRight = canvasRight.captureStream(90);
 streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
+
+
 renderer.setAnimationLoop(function () {
 
 
   // FIXED: Always render streams (decoupled from local XR); use manual IPD offset
-  const ipd = 0.03;
-  newcamLeft.position.set(-ipd / 2, 0, 0);
-  newcamRight.position.set(ipd / 2, 0, 0);
-  newcamLeft.updateMatrixWorld();
-  newcamRight.updateMatrixWorld();
-  renderer.render(scene, camera);
+  newplayer.position.copy(player.position);
+  newplayer.quaternion.copy(player.quaternion);
+
+  // Compute local right vector for IPD
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(player.quaternion);
+
+  newcamLeft.position.copy(player.position).addScaledVector(right, -ipd/2);
+  newcamRight.position.copy(player.position).addScaledVector(right, ipd/2);
+
+  newcamLeft.quaternion.copy(player.quaternion);
+  newcamRight.quaternion.copy(player.quaternion);
   const imageLeft = equiLeft.update(newcamLeft, scene);
   const imageRight = equiRight.update(newcamRight, scene);
 

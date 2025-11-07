@@ -17,7 +17,7 @@ void main()  {
 `;
 
 const fragmentShader = `
-precision mediump float;
+precision highp float;
 
 uniform samplerCube map;
 
@@ -75,7 +75,7 @@ export class CubemapToEquirectangular {
 
         if (provideCubeCamera)
         {
-            this.cubeCamera = this.getCubeCamera(2048);
+            this.cubeCamera = this.getCubeCamera(4096);
         }
     }
 

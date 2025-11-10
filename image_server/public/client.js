@@ -1,13 +1,5 @@
-/**
- * Work based on the Three JS Ocean examples at
- * https://threejs.org/examples/?q=water#webgl_shaders_ocean
- */
 import * as THREE from "three";
 import { OrbitControls } from "./jsm/controls/OrbitControls.js";
-import Stats from "./jsm/libs/stats.module.js";
-import { GUI } from "./jsm/libs/lil-gui.module.min.js";
-import { Water } from "./jsm/objects/Water.js";
-import { Sky } from "./jsm/objects/Sky.js";
 import { VRButton} from './jsm/webxr/VRButton.js';
 import { GLTFLoader } from "./jsm/loaders/GLTFLoader.js";
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
@@ -164,11 +156,10 @@ renderer.xr.addEventListener("sessionstart", ()=> {
   console.log("VR Session Started");
 });
 
-const equiLeft = new CubemapToEquirectangular(renderer, true);
-const equiRight = new CubemapToEquirectangular(renderer, true);
 
-const renderWidth = 4096; // desired output width
-const renderHeight = 2048; // desired output height
+
+const renderWidth = 1920; // desired output width
+const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
@@ -185,7 +176,7 @@ const sessionInit = {
 const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
-const vrButton =  VRButton.createButton( renderer,sessionInit )
+const vrButton =  VRButton.createButton( renderer )
 document.body.appendChild(vrButton);
 
 
@@ -206,9 +197,6 @@ player.add( controller2 );
 
 const controllerModelFactory = new XRControllerModelFactory();
 
-// Controller 1
-controller1 = renderer.xr.getController(0);
-player.add(controller1);
 
 controllerGrip1 = renderer.xr.getControllerGrip(0);
 controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
@@ -302,63 +290,6 @@ function movePlayerVertical(y) {
   // negative because stick up is usually negative
 }
 
-const sun = new THREE.Vector3();
-const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
-const water = new Water(waterGeometry, {
-  textureWidth: 512,
-  textureHeight: 512,
-  waterNormals: new THREE.TextureLoader(),
-  alpha: 1.0,
-  sunDirection: new THREE.Vector3(),
-  sunColor: 0xffffff,
-  waterColor: 0x001e0f,
-  distortionScale: 3.7,
-  fog: scene.fog !== undefined,
-});
-water.rotation.x = -Math.PI / 2;
-
-// scene.add(water);
-
-const sky = new Sky();
-sky.scale.setScalar(10000);
-scene.add(sky);
-
-let uniforms = sky.material.uniforms;
-uniforms["turbidity"].value = 10;
-uniforms["rayleigh"].value = 2;
-uniforms["mieCoefficient"].value = 0.005;
-uniforms["mieDirectionalG"].value = 0.8;
-
-const parameters = {
-  inclination: 0.49,
-  azimuth: 0.205,
-};
-
-const pmremGenerator = new THREE.PMREMGenerator(renderer);
-
-function updateSun() {
-  var theta = Math.PI * (parameters.inclination - 0.5);
-  var phi = 2 * Math.PI * (parameters.azimuth - 0.5);
-
-  sun.x = Math.cos(phi);
-  sun.y = Math.sin(phi) * Math.sin(theta);
-  sun.z = Math.sin(phi) * Math.cos(theta);
-
-  sky.material.uniforms["sunPosition"].value.copy(sun);
-  water.material.uniforms["sunDirection"].value.copy(sun).normalize();
-
-  scene.environment = pmremGenerator.fromScene(sky).texture;
-}
-
-updateSun();
-
-const geometry = new THREE.BoxGeometry(30, 30, 30);
-const material = new THREE.MeshStandardMaterial({
-  roughness: 0,
-});
-
-const cube = new THREE.Mesh(geometry, material);
-// scene.add(cube);
 
 window.addEventListener(
   "resize",
@@ -366,29 +297,11 @@ window.addEventListener(
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-    render();
   },
   false
 );
 
-const stats = Stats();
-document.body.appendChild(stats.dom);
 
-const gui = new GUI();
-
-const skyFolder = gui.addFolder("Sky");
-skyFolder.add(parameters, "inclination", 0, 0.5, 0.0001).onChange(updateSun);
-skyFolder.add(parameters, "azimuth", 0, 1, 0.0001).onChange(updateSun);
-skyFolder.open();
-
-const waterFolder = gui.addFolder("Water");
-waterFolder
-  .add(water.material.uniforms.distortionScale, "value", 0, 8, 0.1)
-  .name("distortionScale");
-waterFolder
-  .add(water.material.uniforms.size, "value", 0.1, 10, 0.1)
-  .name("size");
-waterFolder.open();
 
 			
 
@@ -422,7 +335,7 @@ ws.onopen = async () => {
     lines[mLineIndex] = [...parts.slice(0, 3), h264Payload, ...parts.slice(3).filter(p => p !== h264Payload)].join(" ");
     return lines.join("\r\n");
   }
-
+  
   // Create offer to headset
   const offer = await pc.createOffer({ offerToReceiveVideo: true });
   offer.sdp = preferH264(offer.sdp);
@@ -447,8 +360,10 @@ ws.onopen = async () => {
 };
 
 
-let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: initialize with params matching main camera
-let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000); // FIXED: same
+let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
+let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
+
+
 const ipd = 0.03;
 newcamLeft.position.set(-ipd / 2, 0, 0);
 newcamRight.position.set(ipd / 2, 0, 0);
@@ -521,30 +436,51 @@ pc.onicecandidate = (event) => {
     );
   }
 };
-const canvasLeft = document.createElement("canvas");
-const canvasRight = document.createElement("canvas");
+const streamRendererLeft = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", alpha: false});
+const streamRendererRight = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", alpha: false});
+streamRendererLeft.setSize(renderWidth,renderHeight);
+streamRendererLeft.domElement.getContext('webgl2', {
+  alpha: false,
+  depth: false,
+  stencil: false,
+  antialias: true,
+  premultipliedAlpha: false,
+  preserveDrawingBuffer: true,
+  powerPreference: 'high-performance'
+});
+streamRendererLeft.xr.enabled = true;
 
-canvasLeft.width = 4096;
-canvasLeft.height = 2048;
+streamRendererRight.setSize(renderWidth,renderHeight);
+streamRendererRight.domElement.getContext('webgl2', {
+  alpha: false,
+  depth: false,
+  stencil: false,
+  antialias: true,
+  premultipliedAlpha: false,
+  preserveDrawingBuffer: true,
+  powerPreference: 'high-performance'
+});
 
-canvasRight.width = 4096;
-canvasRight.height = 2048;
+streamRendererRight.xr.enabled = true;
 
-const ctxLeft = canvasLeft.getContext("2d");
-const ctxRight = canvasRight.getContext("2d");
+streamRendererLeft.setPixelRatio(1); // don't upscale
+streamRendererRight.setPixelRatio(1);
 
+
+const equiLeft = new CubemapToEquirectangular(streamRendererLeft, true);
+const equiRight = new CubemapToEquirectangular(streamRendererRight, true);
 
 // Add stream
-const streamLeft = canvasLeft.captureStream(90);
+const streamLeft = streamRendererLeft.domElement.captureStream(90);
 streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
-const streamRight = canvasRight.captureStream(90);
+const streamRight = streamRendererRight.domElement.captureStream(90);
 streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 
 
-renderer.setAnimationLoop(function () {
 
+renderer.setAnimationLoop(function () {
 
   // FIXED: Always render streams (decoupled from local XR); use manual IPD offset
   newplayer.position.copy(player.position);
@@ -558,12 +494,13 @@ renderer.setAnimationLoop(function () {
 
   newcamLeft.quaternion.copy(player.quaternion);
   newcamRight.quaternion.copy(player.quaternion);
-  const imageLeft = equiLeft.update(newcamLeft, scene);
-  const imageRight = equiRight.update(newcamRight, scene);
 
-  if (imageLeft) ctxLeft.putImageData(imageLeft, 0, 0);
-  if (imageRight) ctxRight.putImageData(imageRight, 0, 0);
+  equiLeft.update(newcamLeft, scene);
+  equiRight.update(newcamRight, scene);
+
+
   
-  stats.update();
+
+  
 });
 

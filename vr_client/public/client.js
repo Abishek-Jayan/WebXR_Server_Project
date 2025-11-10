@@ -12,11 +12,11 @@ const ctxLeft = canvasLeft.getContext("2d");
 const ctxRight = canvasRight.getContext("2d");
 
 
-canvasLeft.width = 4096;
-canvasLeft.height = 2048;
+canvasLeft.width = 1920;
+canvasLeft.height = 1080;
 
-canvasRight.width = 4096;
-canvasRight.height = 2048;
+canvasRight.width = 1920;
+canvasRight.height = 1080;
 
 
 
@@ -195,7 +195,11 @@ renderer.setAnimationLoop(() => {
   
 });
 const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }, {
+    urls: "turn:your-turn-server.com:3478",
+    username: "user",
+    credential: "pass"
+  }]
     });
 
 const ws = new WebSocket("wss://10.24.46.139:3001"); // connect to streamer server

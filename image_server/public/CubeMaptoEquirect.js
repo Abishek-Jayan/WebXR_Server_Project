@@ -68,14 +68,14 @@ export class CubemapToEquirectangular {
         this.cubeCamera = null;
         this.attachedCamera = null;
 
-        this.setSize(4096, 2048);
+        this.setSize(1920, 1080);
 
         const gl = this.renderer.getContext();
         this.cubeMapSize = gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE);
 
         if (provideCubeCamera)
         {
-            this.cubeCamera = this.getCubeCamera(4096);
+            this.cubeCamera = this.getCubeCamera(1920);
         }
     }
 
@@ -121,41 +121,14 @@ export class CubemapToEquirectangular {
         this.attachedCamera = camera;
     }
 
-    convert(cubeCamera, download) {
+    convert(cubeCamera, ) {
         this.quad.material.uniforms.map.value = cubeCamera.renderTarget.texture;
         this.renderer.xr.enabled = false;
-        this.renderer.setRenderTarget(this.output);
         this.renderer.render(this.scene, this.camera);
         this.renderer.xr.enabled = true;
-        this.renderer.setRenderTarget(null);
-
-
-        const pixels = new Uint8Array(4 * this.width * this.height);
-        this.renderer.readRenderTargetPixels(this.output, 0, 0, this.width, this.height, pixels);
-
-        const imageData = new ImageData(new Uint8ClampedArray(pixels), this.width, this.height);
-
-        // if (download !== false) this.download(imageData);
-
-        return imageData;
     }
 
-    download(imageData) {
-        this.ctx.putImageData(imageData, 0, 0);
-        this.canvas.toBlob(blob => {
-            const url = URL.createObjectURL(blob);
-            const fileName = 'pano-' + document.title + '-' + Date.now() + '.png';
-            const anchor = document.createElement('a');
-            anchor.href = url;
-            anchor.setAttribute("download", fileName);
-            anchor.style.display = "none";
-            document.body.appendChild(anchor);
-            setTimeout(() => {
-                anchor.click();
-                document.body.removeChild(anchor);
-            }, 1);
-        }, 'image/png');
-    }
+    
 
     update(camera, scene) {
         const autoClear = this.renderer.autoClear;

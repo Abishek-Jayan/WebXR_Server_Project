@@ -54,7 +54,7 @@ wss.on("connection", (ws, req) => {
     if (data.move && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
-    // relay signaling messages
+    // relay signaling messagesR
     if (data.type === "offer") {
       if (headsetSocket) {
         console.log("Recieved offer from streamer, forwarding it to headset");
@@ -64,9 +64,7 @@ wss.on("connection", (ws, req) => {
         pendingOffer = data;
       }
     }
-    if (data.type === "offer" && headsetSocket) {
-      headsetSocket.send(JSON.stringify(data));
-    }
+
     if (data.type === "answer" && streamerSocket) {
       console.log("Recieved offer from headset, forwarding it to streamer");
       streamerSocket.send(JSON.stringify(data));

@@ -5,18 +5,10 @@ import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 
 
-const canvasLeft = document.createElement("canvas");
-const canvasRight = document.createElement("canvas");
-
-const ctxLeft = canvasLeft.getContext("2d");
-const ctxRight = canvasRight.getContext("2d");
 
 
-canvasLeft.width = 1920;
-canvasLeft.height = 1080;
 
-canvasRight.width = 1920;
-canvasRight.height = 1080;
+
 
 
 
@@ -131,18 +123,26 @@ function handleControllerMovement() {
   }
 }
 
-// Create a texture from your 2D canvas
-const videoTextureLeft = new THREE.CanvasTexture(canvasLeft);
-videoTextureLeft.minFilter = THREE.LinearMipmapLinearFilter;
-videoTextureLeft.magFilter = THREE.LinearFilter;
-videoTextureLeft.generateMipmaps = true;
-const videoTextureRight = new THREE.CanvasTexture(canvasRight);
-videoTextureRight.minFilter = THREE.LinearMipmapLinearFilter;
-videoTextureRight.magFilter = THREE.LinearFilter;
-videoTextureRight.generateMipmaps = true;
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight});
+const videoLeft = document.createElement("video");
+const videoRight = document.createElement("video");
+
+// Create a texture from your 2D canvas
+const videoTextureLeft = new THREE.VideoTexture(videoLeft);
+videoTextureLeft.minFilter = THREE.LinearFilter;
+videoTextureLeft.magFilter = THREE.LinearFilter;
+videoTextureLeft.generateMipmaps = false;
+videoTextureLeft.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+
+const videoTextureRight = new THREE.VideoTexture(videoRight);
+videoTextureRight.minFilter = THREE.LinearFilter;
+videoTextureRight.magFilter = THREE.LinearFilter;
+videoTextureRight.generateMipmaps = false;
+videoTextureRight.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+
+
+const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, toneMapped: false });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, toneMapped: false});
 
 
 // Create a sphere that surrounds the user
@@ -155,8 +155,7 @@ sphereGeometry.scale(-1, 1, 1); // Critical: flip normals inward
 const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
 const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
 
-const videoLeft = document.createElement("video");
-const videoRight = document.createElement("video");
+
 
 videoLeft.autoplay = true;
 videoLeft.playsInline = true;
@@ -180,15 +179,6 @@ renderer.setAnimationLoop(() => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
-    }
-
-    if (videoLeft.readyState >= videoLeft.HAVE_CURRENT_DATA) {
-      ctxLeft.drawImage(videoLeft, 0, 0, canvasLeft.width, canvasLeft.height);
-      videoTextureLeft.needsUpdate = true;
-    }
-    if (videoRight.readyState >= videoRight.HAVE_CURRENT_DATA) {
-      ctxRight.drawImage(videoRight, 0, 0, canvasRight.width, canvasRight.height);
-      videoTextureRight.needsUpdate = true;
     }
   // Render scene into headset
   renderer.render(scene, camera);

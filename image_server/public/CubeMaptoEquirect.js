@@ -43,7 +43,7 @@ void main()  {
 
 export class CubemapToEquirectangular {
 
-    constructor(renderer, provideCubeCamera) {
+    constructor(renderer, cubeCamera, renderTarget) {
         this.width = 1;
         this.height = 1;
         this.renderer = renderer;
@@ -61,22 +61,10 @@ export class CubemapToEquirectangular {
         this.scene.add(this.quad);
 
         this.camera = new THREE.OrthographicCamera( -0.5, 0.5, 0.5, -0.5, -10000, 10000 );
-
-        this.canvas = document.createElement('canvas');
-        this.ctx = this.canvas.getContext('2d');
-
-        this.cubeCamera = null;
-        this.attachedCamera = null;
+        this.cubeCamera = cubeCamera;
+        this.cubeCamera.renderTarget = renderTarget;
 
         this.setSize(1920, 1080);
-
-        const gl = this.renderer.getContext();
-        this.cubeMapSize = gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE);
-
-        if (provideCubeCamera)
-        {
-            this.cubeCamera = this.getCubeCamera(1920);
-        }
     }
 
     setSize(width, height) {
@@ -90,53 +78,19 @@ export class CubemapToEquirectangular {
         this.camera.top = this.height / 2;
         this.camera.bottom = -this.height / 2;
         this.camera.updateProjectionMatrix();
-
-        this.output = new THREE.WebGLRenderTarget(this.width, this.height, {
-            minFilter: THREE.LinearFilter,
-            magFilter: THREE.LinearFilter,
-            wrapS: THREE.ClampToEdgeWrapping,
-            wrapT: THREE.ClampToEdgeWrapping,
-            format: THREE.RGBAFormat,
-            type: THREE.UnsignedByteType
-        });
-
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
     }
 
-    getCubeCamera(size) {
-        const cubeMapSize = Math.min(this.cubeMapSize, size);
-        const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
-        const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
-        this.cubeCamera = new THREE.CubeCamera(0.1, 1000, renderTarget);
-        this.cubeCamera.renderTarget = renderTarget;
+  
 
-
-        return this.cubeCamera;
-    }
-
-    attachCubeCamera(camera) {
-        this.cubeCamera = this.getCubeCamera();
-        this.cubeCamera.position.copy(camera.position);
-        this.attachedCamera = camera;
-    }
-
-    convert(cubeCamera, ) {
+    convert(cubeCamera) {
         this.quad.material.uniforms.map.value = cubeCamera.renderTarget.texture;
-        this.renderer.xr.enabled = false;
         this.renderer.render(this.scene, this.camera);
-        this.renderer.xr.enabled = true;
     }
-
-    
 
     update(camera, scene) {
-        const autoClear = this.renderer.autoClear;
-        this.renderer.autoClear = true;
         this.cubeCamera.position.copy(camera.position);
         this.cubeCamera.quaternion.copy(camera.quaternion);
         this.cubeCamera.update(this.renderer, scene);
-        this.renderer.autoClear = autoClear;
-        return this.convert(this.cubeCamera);
+        this.convert(this.cubeCamera);
     }
 }

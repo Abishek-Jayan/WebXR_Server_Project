@@ -24,7 +24,7 @@ camera.position.set(30, 30, 100);
 // instantiate a loader
 const loader = new PDBLoader();
 // === Lights (add once, outside the loader if you want) ===
-const ambientLight = new THREE.AmbientLight(0x404040, 2); // soft white
+const ambientLight = new THREE.AmbientLight(0x404040, 10); // soft white
 scene.add(ambientLight);
 
 const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
@@ -341,12 +341,18 @@ ws.onopen = async () => {
   offer.sdp = preferH264(offer.sdp);
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
-    if (sender.track && sender.track.kind === 'video') {
-        let params = sender.getParameters();
-        if (!params.encodings) params.encodings = [{}];
-        params.encodings[0].maxBitrate = 50_000_000; // 30 Mbps
-        sender.setParameters(params).catch(e => console.warn(e));
-    }
+    if (!sender.track || sender.track.kind !== 'video') return;
+    const p = sender.getParameters();
+    if (!p.encodings) p.encodings = [{}];
+    Object.assign(p.encodings[0], {
+    maxBitrate: 10_000_000,     // start ~10 Mbps per stream; tune up/down
+    maxFramerate: 90,           // match capture target
+    scaleResolutionDownBy: 2.0  // raise (e.g., 1.25–2) if encoder is the bottleneck
+    });
+    p.degradationPreference = 'maintain-framerate';
+    sender.setParameters(p).catch(()=>{});
+    // Content hint on the track itself:
+    try { sender.track.contentHint = 'motion'; } catch {}
   });
   ws.send(
     JSON.stringify({
@@ -362,6 +368,9 @@ ws.onopen = async () => {
 
 let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
 let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
+
+
+
 
 
 const ipd = 0.03;
@@ -436,44 +445,45 @@ pc.onicecandidate = (event) => {
     );
   }
 };
-const streamRendererLeft = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", alpha: false});
-const streamRendererRight = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", alpha: false});
-streamRendererLeft.setSize(renderWidth,renderHeight);
-streamRendererLeft.domElement.getContext('webgl2', {
-  alpha: false,
+const streamRendererLeft = new THREE.WebGLRenderer({  alpha: false,
   depth: false,
   stencil: false,
-  antialias: true,
+  antialias: false,
   premultipliedAlpha: false,
-  preserveDrawingBuffer: true,
-  powerPreference: 'high-performance'
+  preserveDrawingBuffer: false,
+
 });
+const streamRendererRight = new THREE.WebGLRenderer( { alpha: false,
+  depth: false,
+  stencil: false,
+  antialias: false,
+  premultipliedAlpha: false,
+  preserveDrawingBuffer: false,
+
+});
+streamRendererLeft.setSize(renderWidth,renderHeight);
+
 streamRendererLeft.xr.enabled = true;
 
 streamRendererRight.setSize(renderWidth,renderHeight);
-streamRendererRight.domElement.getContext('webgl2', {
-  alpha: false,
-  depth: false,
-  stencil: false,
-  antialias: true,
-  premultipliedAlpha: false,
-  preserveDrawingBuffer: true,
-  powerPreference: 'high-performance'
-});
+
 
 streamRendererRight.xr.enabled = true;
 
-streamRendererLeft.setPixelRatio(1); // don't upscale
-streamRendererRight.setPixelRatio(1);
+const cubeMapSize = 1920;
+const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
+const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
+const cubeCamera = new THREE.CubeCamera(0.1, 25, renderTarget);
 
 
-const equiLeft = new CubemapToEquirectangular(streamRendererLeft, true);
-const equiRight = new CubemapToEquirectangular(streamRendererRight, true);
+
+const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget);
+const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget);
 
 // Add stream
-const streamLeft = streamRendererLeft.domElement.captureStream(90);
+const streamLeft = streamRendererLeft.domElement.captureStream();
 streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
-const streamRight = streamRendererRight.domElement.captureStream(90);
+const streamRight = streamRendererRight.domElement.captureStream();
 streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
@@ -482,11 +492,6 @@ streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 renderer.setAnimationLoop(function () {
 
-  // FIXED: Always render streams (decoupled from local XR); use manual IPD offset
-  newplayer.position.copy(player.position);
-  newplayer.quaternion.copy(player.quaternion);
-
-  // Compute local right vector for IPD
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(player.quaternion);
 
   newcamLeft.position.copy(player.position).addScaledVector(right, -ipd/2);

@@ -1,13 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "./jsm/controls/OrbitControls.js";
 import { VRButton} from './jsm/webxr/VRButton.js';
-import { GLTFLoader } from "./jsm/loaders/GLTFLoader.js";
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
-import { PDBLoader } from './jsm/loaders/PDBLoader.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
-
 
 const scene = new THREE.Scene();
 let hand1, hand2;
@@ -21,134 +18,12 @@ const camera = new THREE.PerspectiveCamera(
 );
 camera.position.set(30, 30, 100);
 
-// instantiate a loader
-const loader = new PDBLoader();
-// === Lights (add once, outside the loader if you want) ===
 const ambientLight = new THREE.AmbientLight(0x404040, 10); // soft white
 scene.add(ambientLight);
 
-const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 10);
 directionalLight.position.set(1, 1, 1).normalize();
 scene.add(directionalLight);
-// load a PDB resource
-loader.load(
-	// resource URL
-	'./8HTI.pdb',
-	// called when the resource is loaded
-	function ( pdb ) {
-
-    const geometryAtoms = pdb.geometryAtoms;
-    const geometryBonds = pdb.geometryBonds;
-    const json = pdb.json;
-    console.log(json);
-    console.log('This molecule has ' + json.atoms.length + ' atoms');
-    // console.log('This molecule has ' + json.bonds.length + ' bonds');
-
-    // Atom colors by element
-    const atomColors = {
-      H: 0xffffff, // white
-      C: 0xaaaaaa, // gray
-      O: 0xff0000, // red
-      N: 0x0000ff, // blue
-      S: 0xffff00, // yellow
-      P: 0xff8000  // orange
-    };
-
-    const sphereGeometry = new THREE.IcosahedronGeometry(0.25, 2);
-    // === Compute center of all atoms ===
-    const positions = json.atoms.map(atom => new THREE.Vector3().fromArray(atom, 0));
-    const boundingBox = new THREE.Box3().setFromPoints(positions);
-    const center = boundingBox.getCenter(new THREE.Vector3());
-    
-
-    // === Atoms ===
-    for (let i = 0; i < json.atoms.length; i++) {
-      const atom = json.atoms[i]; // [x, y, z, index, element]
-      const position = new THREE.Vector3().fromArray(atom, 0).sub(center);
-      const element = atom[4]; // element symbol
-      const color = atomColors[element] || 0xcccccc;
-
-      const material = new THREE.MeshPhongMaterial({ color });
-      const atomMesh = new THREE.Mesh(sphereGeometry, material);
-      atomMesh.position.copy(position);
-      scene.add(atomMesh);
-    }
-
-    // === Bonds ===
-    const bondPositions = geometryBonds.attributes.position;
-    const bondMaterial = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
-
-    function createBond(start, end, material) {
-      const bondLength = start.distanceTo(end);
-      const bondGeometry = new THREE.CylinderGeometry(0.1, 0.1, bondLength, 8,1);
-      const bondMesh = new THREE.Mesh(bondGeometry, material);
-
-      // Position
-      const midpoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-      bondMesh.position.copy(midpoint);
-
-      // Align cylinder with bond direction
-      const dir = new THREE.Vector3().subVectors(end, start).normalize();
-      const yAxis = new THREE.Vector3(0, 1, 0);
-
-      // If dir is already parallel to yAxis, avoid zero cross product
-      if (Math.abs(dir.dot(yAxis)) > 0.999) {
-        bondMesh.quaternion.set(0, 0, 0, 1); // identity rotation
-      } else {
-        const quat = new THREE.Quaternion().setFromUnitVectors(yAxis, dir);
-        bondMesh.quaternion.copy(quat);
-      }
-
-      return bondMesh;
-    }
-
-
-        for (let i = 0; i < json.atoms.length - 1; i++) {
-          const atom1 = json.atoms[i];
-          const atom2 = json.atoms[i + 1];
-
-          // Only connect backbone atoms (N, CA, C)
-          if ((atom1[4] === "N" || atom1[4] === "CA" || atom1[4] === "C") &&
-              (atom2[4] === "N" || atom2[4] === "CA" || atom2[4] === "C")) {
-            
-            const start = new THREE.Vector3().fromArray(atom1, 0).sub(center);
-            const end = new THREE.Vector3().fromArray(atom2, 0).sub(center);
-
-            const bondMesh = createBond(start, end, new THREE.MeshPhongMaterial({ color: 0xcccccc }));
-            scene.add(bondMesh);
-              }
-	  } 
-  },
-	// called when loading is in progress
-	function ( xhr ) {
-
-		console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
-
-	},
-	// called when loading has errors
-	function ( error ) {
-
-		console.log( 'An error happened' );
-
-	}
-);
-
-
-
-// const loader = new GLTFLoader();
-// loader.load(
-//   "/BSP_TORRENS.glb", // adjust the path to where your file is
-//   function (gltf) {
-//     const model = gltf.scene;
-//     model.position.set(0, 0, 0); // adjust position
-//     model.scale.set(10, 10, 10); // adjust scale
-//     scene.add(model);
-//   },
-//   undefined,
-//   function (error) {
-//     console.error("An error occurred while loading the GLB:", error.message || error);
-//   }
-// );
 
 const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:"high-performance", preserveDrawingBuffer: true, alpha: false});
 renderer.xr.enabled = true;
@@ -267,7 +142,7 @@ function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
 
 
 function movePlayerHorizontal(x, y) {
-  const speed = 1.0;
+  const speed = 0.5;
 
   // Get the headset forward direction
   const dir = new THREE.Vector3(0, 0, -1);
@@ -473,7 +348,7 @@ streamRendererRight.xr.enabled = true;
 const cubeMapSize = 1920;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
-const cubeCamera = new THREE.CubeCamera(0.1, 25, renderTarget);
+const cubeCamera = new THREE.CubeCamera(0.1, 10, renderTarget);
 
 
 
@@ -503,8 +378,7 @@ renderer.setAnimationLoop(function () {
   equiLeft.update(newcamLeft, scene);
   equiRight.update(newcamRight, scene);
 
-
-  
+  renderer.render(scene,camera);
 
   
 });

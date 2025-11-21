@@ -60,7 +60,7 @@ export class CubemapToEquirectangular {
         this.quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.material);
         this.scene.add(this.quad);
 
-        this.camera = new THREE.OrthographicCamera( -0.5, 0.5, 0.5, -0.5, -10000, 10000 );
+        this.camera = new THREE.OrthographicCamera( -0.5, 0.5, 0.5, -0.5, 0, 1 );
         this.cubeCamera = cubeCamera;
         this.cubeCamera.renderTarget = renderTarget;
 

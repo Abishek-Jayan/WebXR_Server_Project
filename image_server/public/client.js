@@ -5,16 +5,45 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
-import { TIFFLoader } from './jsm/loaders/TIFFLoader.js';
-
+import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
+import rayMarchMaterial from "./raymarch.js";
 
 const scene = new THREE.Scene();
-const loader = new TIFFLoader();
-const texture = await loader.loadAsync( 'sc_test_cropped_tif_brightness_and_contrast_adjusted.tif' );
-texture.colorSpace = THREE.SRGBColorSpace;
-const geo = new THREE.PlaneGeometry(10,10);
-const mat = new THREE.MeshBasicMaterial({ map: texture });
-const mesh = new THREE.Mesh(geo, mat);
+
+const nrrd = await new NRRDLoader().loadAsync("./sc_test_cropped_tif_brightness_and_contrast_adjusted.nrrd");
+
+// Build 3D texture
+console.log(nrrd);
+const texture3D = new THREE.Data3DTexture(
+  nrrd.data,
+  nrrd.xLength,
+  nrrd.yLength,
+  nrrd.zLength
+);
+
+texture3D.format = THREE.RedFormat;
+texture3D.type = THREE.UnsignedByteType;   // For 8-bit NRRD
+texture3D.minFilter = THREE.LinearFilter;
+texture3D.magFilter = THREE.LinearFilter;
+texture3D.unpackAlignment = 1;
+texture3D.needsUpdate = true;
+
+rayMarchMaterial.uniforms.volumeTex.value = texture3D;
+rayMarchMaterial.uniforms.dims.value.set(nrrd.xLength, nrrd.yLength, nrrd.zLength);
+
+const geometry = new THREE.BoxGeometry(20, 20, 20);  // size in world units
+const material = new THREE.ShaderMaterial({
+    uniforms: rayMarchMaterial.uniforms,
+    vertexShader: rayMarchMaterial.vertexShader,
+    fragmentShader: rayMarchMaterial.fragmentShader,
+    side: THREE.BackSide,
+    transparent: true,
+});
+
+// Volume mesh (the box the shader raymarches inside)
+const mesh = new THREE.Mesh(geometry, material);
+
+
 
 let hand1, hand2;
 let controller1, controller2;
@@ -53,10 +82,9 @@ renderer.domElement.style.height = window.innerHeight + "px";
 
 document.body.appendChild(renderer.domElement);
 
-
 const player = new THREE.Group();
-mesh.position.set(0, 0, -10);
 player.add(mesh);
+mesh.position.set(0, 0, -10);
 player.add(camera);
 scene.add(player);
 const vrButton =  VRButton.createButton( renderer )
@@ -385,8 +413,9 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
-  equiLeft.update(newcamLeft, scene);
-  equiRight.update(newcamRight, scene);
+  // equiLeft.update(newcamLeft, scene);
+  // equiRight.update(newcamRight, scene);
+  renderer.render(scene,camera);
   
 });
 

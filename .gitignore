@@ -10,3 +10,5 @@ env/
 node_modules/
 Immersive-Web-Emulator-Chrome-Web-Store/
 puppeteer_profile/
+image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.tif
+image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.nrrd

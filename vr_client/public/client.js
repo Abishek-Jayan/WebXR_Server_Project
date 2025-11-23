@@ -172,18 +172,7 @@ player.add(videoSphereRight);
 videoSphereLeft.layers.set(1);
 videoSphereRight.layers.set(2);
 
-renderer.setAnimationLoop(() => {
-  handleControllerMovement();
-  xrCamera.getWorldPosition(pos);
-  xrCamera.getWorldQuaternion(quat);
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
-    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
-    }
-  // Render scene into headset
-  renderer.render(scene, camera);
-  
-});
+
 const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }, {
     urls: "turn:your-turn-server.com:3478",
@@ -198,6 +187,20 @@ ws.onopen = () => {
   console.log("Connected to signaling server (headset)");
   ws.send(JSON.stringify({ role: "headset" })); // register as headset
 };
+
+renderer.setAnimationLoop(() => {
+  handleControllerMovement();
+  xrCamera.getWorldPosition(pos);
+  xrCamera.getWorldQuaternion(quat);
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
+    quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
+    }
+  // Render scene into headset
+  renderer.render(scene, camera);
+  
+});
+
 
 document.addEventListener('keydown',(event) => {
   if(event.key === "w" || event.key === "W")

@@ -1,6 +1,0 @@
-output_images/
-./env/
-env/
-*.pkl
-*.gltf
-*.glb

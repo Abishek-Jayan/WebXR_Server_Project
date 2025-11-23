@@ -5,8 +5,17 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
+import { TIFFLoader } from './jsm/loaders/TIFFLoader.js';
+
 
 const scene = new THREE.Scene();
+const loader = new TIFFLoader();
+const texture = await loader.loadAsync( 'sc_test_cropped_tif_brightness_and_contrast_adjusted.tif' );
+texture.colorSpace = THREE.SRGBColorSpace;
+const geo = new THREE.PlaneGeometry(10,10);
+const mat = new THREE.MeshBasicMaterial({ map: texture });
+const mesh = new THREE.Mesh(geo, mat);
+
 let hand1, hand2;
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
@@ -44,11 +53,10 @@ renderer.domElement.style.height = window.innerHeight + "px";
 
 document.body.appendChild(renderer.domElement);
 
-const sessionInit = {
-					optionalFeatures: [ 'hand-tracking' ]
-				};
 
 const player = new THREE.Group();
+mesh.position.set(0, 0, -10);
+player.add(mesh);
 player.add(camera);
 scene.add(player);
 const vrButton =  VRButton.createButton( renderer )
@@ -66,9 +74,6 @@ controls.maxDistance = 200.0;
 controller1 = renderer.xr.getController( 0 );
 player.add( controller1 );
 
-controller2 = renderer.xr.getController( 1 );
-
-player.add( controller2 );
 
 const controllerModelFactory = new XRControllerModelFactory();
 
@@ -142,11 +147,11 @@ function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
 
 
 function movePlayerHorizontal(x, y) {
-  const speed = 0.5;
+  const speed = 0.05;
 
   // Get the headset forward direction
   const dir = new THREE.Vector3(0, 0, -1);
-  dir.applyQuaternion(player.quaternion);
+  dir.applyQuaternion(newplayer.quaternion);
   dir.y = 0; // stay horizontal
   dir.normalize();
 
@@ -154,14 +159,14 @@ function movePlayerHorizontal(x, y) {
   const strafe = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
 
   // Move player rig
-  player.position.addScaledVector(dir, -y * speed);     // forward/back // FIXED: changed newplayer to player (assuming this is for local controls; adjust if remote)
-  player.position.addScaledVector(strafe, x * speed);   // left/right
+  newplayer.position.addScaledVector(dir, -y * speed);     // forward/back 
+  newplayer.position.addScaledVector(strafe, x * speed);   // left/right
 }
 
 
 function movePlayerVertical(y) {
   const speed = 1.0;
-  player.position.y += -y * speed; // FIXED: changed newplayer to player
+  newplayer.position.y += -y * speed; 
   // negative because stick up is usually negative
 }
 
@@ -365,21 +370,23 @@ streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 
+  // Compute local right vector for IPD
+
+
+
+
+
 renderer.setAnimationLoop(function () {
 
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(player.quaternion);
+  newcamLeft.position.copy(newplayer.position).addScaledVector(right, -ipd/2);
+  newcamRight.position.copy(newplayer.position).addScaledVector(right, ipd/2);
 
-  newcamLeft.position.copy(player.position).addScaledVector(right, -ipd/2);
-  newcamRight.position.copy(player.position).addScaledVector(right, ipd/2);
-
-  newcamLeft.quaternion.copy(player.quaternion);
-  newcamRight.quaternion.copy(player.quaternion);
+  newcamLeft.quaternion.copy(newplayer.quaternion);
+  newcamRight.quaternion.copy(newplayer.quaternion);
 
   equiLeft.update(newcamLeft, scene);
   equiRight.update(newcamRight, scene);
-
-  renderer.render(scene,camera);
-
   
 });
 

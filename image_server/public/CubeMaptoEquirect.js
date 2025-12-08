@@ -43,7 +43,7 @@ void main()  {
 
 export class CubemapToEquirectangular {
 
-    constructor(renderer, cubeCamera, renderTarget) {
+    constructor(renderer, cubeCamera, renderTarget, renderWidth, renderHeight) {
         this.width = 1;
         this.height = 1;
         this.renderer = renderer;

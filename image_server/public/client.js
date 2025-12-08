@@ -402,15 +402,15 @@ streamRendererRight.setSize(renderWidth,renderHeight);
 
 streamRendererRight.xr.enabled = true;
 
-const cubeMapSize = 3840;
+const cubeMapSize = renderWidth;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
 const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);
 
 
 
-const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget);
-const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget);
+const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget, renderWidth, renderHeight);
+const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget, renderWidth, renderHeight);
 
 // Add stream
 const streamLeft = streamRendererLeft.domElement.captureStream();

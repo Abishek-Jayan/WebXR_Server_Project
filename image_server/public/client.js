@@ -21,6 +21,10 @@ const texture3D = new THREE.Data3DTexture(
   nrrd.zLength
 );
 
+const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
+
+
+
 texture3D.format = THREE.RedFormat;
 texture3D.type = THREE.UnsignedByteType;   // For 8-bit NRRD
 texture3D.minFilter = THREE.LinearFilter;
@@ -186,10 +190,7 @@ function movePlayerHorizontal(x, y) {
   const speed = 0.05;
 
   // Get the headset forward direction
-  const dir = new THREE.Vector3(0, 0, -1);
-  dir.applyQuaternion(newplayer.quaternion);
-  dir.y = 0; // stay horizontal
-  dir.normalize();
+  const dir = new THREE.Vector3().copy(headsetForward);
 
   // Strafe direction (right vector)
   const strafe = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
@@ -324,6 +325,16 @@ ws.onmessage = async (event) => {
     handleControllerMovement("right",0,0,data.ry);
   }
  if(data.type === "pose") {
+  const q = data.quaternion;
+
+  const forward = new THREE.Vector3(0, 0, -1); // camera looks down -Z
+  forward.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+
+  // Optional: ignore vertical component so movement is on XZ plane
+  forward.y = 0;
+  forward.normalize();
+
+  headsetForward.copy(forward);
     // newplayer.quaternion.set(
     //   data.quaternion.x,
     //   data.quaternion.y,

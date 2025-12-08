@@ -64,7 +64,7 @@ export class CubemapToEquirectangular {
         this.cubeCamera = cubeCamera;
         this.cubeCamera.renderTarget = renderTarget;
 
-        this.setSize(1920, 1080);
+        this.setSize(3840, 2160);
     }
 
     setSize(width, height) {

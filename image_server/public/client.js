@@ -79,8 +79,8 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 
 
 
-const renderWidth = 1920; // desired output width
-const renderHeight = 1080; // desired output height
+const renderWidth = 3840; // desired output width
+const renderHeight = 2160; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
@@ -202,7 +202,7 @@ function movePlayerHorizontal(x, y) {
 
 function movePlayerVertical(y) {
   const speed = 0.05;
-  newplayer.position.y += -y * speed; 
+  newplayer.position.y += y * speed; 
   // negative because stick up is usually negative
 }
 
@@ -391,7 +391,7 @@ streamRendererRight.setSize(renderWidth,renderHeight);
 
 streamRendererRight.xr.enabled = true;
 
-const cubeMapSize = 1920;
+const cubeMapSize = 3840;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
 const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);

@@ -10,7 +10,7 @@ import rayMarchMaterial from "./raymarch.js";
 
 const scene = new THREE.Scene();
 
-const nrrd = await new NRRDLoader().loadAsync("./sc_test_cropped_tif_brightness_and_contrast_adjusted.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./new_file.nrrd");
 
 // Build 3D texture
 console.log(nrrd);
@@ -31,7 +31,7 @@ texture3D.needsUpdate = true;
 rayMarchMaterial.uniforms.volumeTex.value = texture3D;
 rayMarchMaterial.uniforms.dims.value.set(nrrd.xLength, nrrd.yLength, nrrd.zLength);
 
-const geometry = new THREE.BoxGeometry(20, 20, 20);  // size in world units
+const geometry = new THREE.BoxGeometry(1, 1, 1);  // size in world units
 const material = new THREE.ShaderMaterial({
     uniforms: rayMarchMaterial.uniforms,
     vertexShader: rayMarchMaterial.vertexShader,
@@ -43,7 +43,15 @@ const material = new THREE.ShaderMaterial({
 // Volume mesh (the box the shader raymarches inside)
 const mesh = new THREE.Mesh(geometry, material);
 
+const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
+const maxDim = Math.max(sx, sy, sz);
+const worldMax = 20; // choose how big the volume should be in world units
 
+mesh.scale.set(
+  (sx / maxDim) * worldMax,
+  (sy / maxDim) * worldMax,
+  (sz / maxDim) * worldMax
+);
 
 let hand1, hand2;
 let controller1, controller2;
@@ -193,7 +201,7 @@ function movePlayerHorizontal(x, y) {
 
 
 function movePlayerVertical(y) {
-  const speed = 1.0;
+  const speed = 0.05;
   newplayer.position.y += -y * speed; 
   // negative because stick up is usually negative
 }
@@ -253,12 +261,17 @@ ws.onopen = async () => {
     const p = sender.getParameters();
     if (!p.encodings) p.encodings = [{}];
     Object.assign(p.encodings[0], {
-    maxBitrate: 10_000_000,     // start ~10 Mbps per stream; tune up/down
+    maxBitrate: 25_000_000,     // start ~10 Mbps per stream; tune up/down
     maxFramerate: 90,           // match capture target
-    scaleResolutionDownBy: 2.0  // raise (e.g., 1.25–2) if encoder is the bottleneck
+    priority: "high",
+    networkPriority: "high",
+    scaleResolutionDownBy: 1.0  // raise (e.g., 1.25–2) if encoder is the bottleneck
+
     });
-    p.degradationPreference = 'maintain-framerate';
+    p.degradationPreference = 'maintain-resolution';
     sender.setParameters(p).catch(()=>{});
+    const effective = sender.getParameters();
+    console.log('encodings after setParameters', effective.encodings);
     // Content hint on the track itself:
     try { sender.track.contentHint = 'motion'; } catch {}
   });
@@ -281,7 +294,7 @@ let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.
 
 
 
-const ipd = 0.03;
+let ipd = 0.064;
 newcamLeft.position.set(-ipd / 2, 0, 0);
 newcamRight.position.set(ipd / 2, 0, 0);
 let flag = true;
@@ -311,12 +324,12 @@ ws.onmessage = async (event) => {
     handleControllerMovement("right",0,0,data.ry);
   }
  if(data.type === "pose") {
-    newplayer.quaternion.set(
-      data.quaternion.x,
-      data.quaternion.y,
-      data.quaternion.z,
-      data.quaternion.w
-    );
+    // newplayer.quaternion.set(
+    //   data.quaternion.x,
+    //   data.quaternion.y,
+    //   data.quaternion.z,
+    //   data.quaternion.w
+    // );
     // newplayer.position.set(
     //   data.position.x,
     //   data.position.y,
@@ -381,7 +394,7 @@ streamRendererRight.xr.enabled = true;
 const cubeMapSize = 1920;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
-const cubeCamera = new THREE.CubeCamera(0.1, 10, renderTarget);
+const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);
 
 
 
@@ -398,14 +411,20 @@ streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 
-  // Compute local right vector for IPD
-
 
 
 
 
 renderer.setAnimationLoop(function () {
 
+  const xrCam = renderer.xr.getCamera(camera);
+  if (!xrCam.cameras || xrCam.cameras.length < 2) {
+      return;  // ≠ VR mode yet → skip
+  }
+  const l = xrCam.cameras[0];
+  const r = xrCam.cameras[1];
+  
+  ipd = l.position.distanceTo(r.position);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(player.quaternion);
   newcamLeft.position.copy(newplayer.position).addScaledVector(right, -ipd/2);
   newcamRight.position.copy(newplayer.position).addScaledVector(right, ipd/2);
@@ -413,8 +432,8 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
-  // equiLeft.update(newcamLeft, scene);
-  // equiRight.update(newcamRight, scene);
+  equiLeft.update(newcamLeft, scene);
+  equiRight.update(newcamRight, scene);
   renderer.render(scene,camera);
   
 });

@@ -12,3 +12,7 @@ Immersive-Web-Emulator-Chrome-Web-Store/
 puppeteer_profile/
 image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.tif
 image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.nrrd
+image_server/public/sc_test_cropped_tif_enhanced.nrrd
+image_server/public/new_file.nrrd
+.gitignore
+image_server/public/sc_test_cropped_tif.nrrd

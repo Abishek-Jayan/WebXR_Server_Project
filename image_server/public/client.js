@@ -389,9 +389,9 @@ ws.onmessage = async (event) => {
   if (data.type === "onehand") {
   mesh.position.add(new THREE.Vector3(
     data.delta.x,
-    data.delta.y,
+    -data.delta.y,
     data.delta.z
-  ));
+  ).multiplyScalar(20.0));
   }
   if (data.type === "transform") {
 

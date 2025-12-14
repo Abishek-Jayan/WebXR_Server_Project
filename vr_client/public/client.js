@@ -30,7 +30,7 @@ scene.add(ambientLight);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
-document.body.appendChild(VRButton.createButton(renderer));
+document.body.appendChild(VRButton.createButton(renderer, {optionalFeatures: ["hand-tracking", "layers"]} ));
 renderer.xr.enabled = true;
 camera.layers.enable(1); // Left eye sees layer 1
 camera.layers.enable(2); // Right eye sees layer 2
@@ -124,6 +124,103 @@ function handleControllerMovement() {
 }
 
 
+
+function isPinching(hand) {
+    const indexTip = hand.joints["index-finger-tip"];
+    const thumbTip = hand.joints["thumb-tip"];
+    if (!indexTip || !thumbTip) return false;
+
+    const d = indexTip.position.distanceTo(thumbTip.position);
+    return d < 0.025;  // 2.5 cm threshold
+}
+
+
+const leftPos = new THREE.Vector3();
+const rightPos = new THREE.Vector3();
+
+let prevLeftGrab = new THREE.Vector3();
+let prevRightGrab = new THREE.Vector3();
+let leftGrabbing = false;
+let rightGrabbing = false;
+let prevMid = new THREE.Vector3();
+let prevDist = 0;
+let prevDir = new THREE.Vector3();
+let wasTwoHandPinching = false;
+
+function sendTwoHandTransform(leftPos, rightPos) {
+  const mid = leftPos.clone().add(rightPos).multiplyScalar(0.5);
+  const dist = leftPos.distanceTo(rightPos);
+  const dir = rightPos.clone().sub(leftPos).normalize();
+
+  if (prevDist !== 0) {
+    ws.send(JSON.stringify({
+      type: "transform",
+      translate: {
+        x: mid.x - prevMid.x,
+        y: mid.y - prevMid.y,
+        z: mid.z - prevMid.z
+      },
+      scale: dist / prevDist,
+      rotation: {
+        from: { x: prevDir.x, y: prevDir.y, z: prevDir.z },
+        to:   { x: dir.x,     y: dir.y,     z: dir.z }
+      }
+    }));
+  }
+
+  prevMid.copy(mid);
+  prevDist = dist;
+  prevDir.copy(dir);
+}
+
+
+function sendOneHandGrab(hand, side) {
+  const tip = hand.joints["index-finger-tip"];
+  if (!tip) return;
+
+  const curr = new THREE.Vector3();
+  tip.getWorldPosition(curr);
+
+  if (side === "left") {
+    if (!leftGrabbing) {
+      prevLeftGrab.copy(curr);
+      leftGrabbing = true;
+      return;
+    }
+
+    const delta = curr.clone().sub(prevLeftGrab);
+    prevLeftGrab.copy(curr);
+
+    ws.send(JSON.stringify({
+      type: "onehand",
+      hand: "left",
+      delta: { x: delta.x, y: delta.y, z: delta.z }
+    }));
+  }
+
+  if (side === "right") {
+    if (!rightGrabbing) {
+      prevRightGrab.copy(curr);
+      rightGrabbing = true;
+      return;
+    }
+
+    const delta = curr.clone().sub(prevRightGrab);
+    prevRightGrab.copy(curr);
+
+    ws.send(JSON.stringify({
+      type: "onehand",
+      hand: "right",
+      delta: { x: delta.x, y: delta.y, z: delta.z }
+    }));
+  }
+}
+
+
+
+
+
+
 const videoLeft = document.createElement("video");
 const videoRight = document.createElement("video");
 
@@ -189,6 +286,48 @@ ws.onopen = () => {
 };
 
 renderer.setAnimationLoop(() => {
+
+
+
+  const leftPinch = isPinching(hand1);
+  const rightPinch = isPinching(hand2);
+
+  if (leftPinch) {
+    hand1.joints["index-finger-tip"].getWorldPosition(leftPos);
+  }
+
+  if (rightPinch) {
+    hand2.joints["index-finger-tip"].getWorldPosition(rightPos);
+  }
+
+
+  // TWO-HAND TRANSFORM
+  if (leftPinch && rightPinch) {
+    sendTwoHandTransform(leftPos, rightPos);
+    wasTwoHandPinching = true;
+    leftGrabbing = false;
+    rightGrabbing = false;
+  }
+  
+  else {
+  if (leftPinch) {
+    sendOneHandGrab(hand1, "left");
+  } else {
+    leftGrabbing = false;
+  }
+
+  if (rightPinch) {
+    sendOneHandGrab(hand2, "right");
+  } else {
+    rightGrabbing = false;
+  }
+
+  wasTwoHandPinching = false;
+  prevDist = 0;
+  
+  }
+    
+
   handleControllerMovement();
   xrCamera.getWorldPosition(pos);
   xrCamera.getWorldQuaternion(quat);

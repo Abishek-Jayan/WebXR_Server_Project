@@ -10,10 +10,9 @@ import rayMarchMaterial from "./raymarch.js";
 
 const scene = new THREE.Scene();
 
-const nrrd = await new NRRDLoader().loadAsync("./new_file.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./mesh_voxelized(0.05).nrrd");
 
 // Build 3D texture
-console.log(nrrd);
 const texture3D = new THREE.Data3DTexture(
   nrrd.data,
   nrrd.xLength,
@@ -83,8 +82,12 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 
 
 
-const renderWidth = 3840; // desired output width
-const renderHeight = 2160; // desired output height
+
+
+
+
+const renderWidth = 1920; // desired output width
+const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
@@ -99,7 +102,7 @@ player.add(mesh);
 mesh.position.set(0, 0, -10);
 player.add(camera);
 scene.add(player);
-const vrButton =  VRButton.createButton( renderer )
+const vrButton =  VRButton.createButton( renderer, {optionalFeatures: ["hand-tracking", "layers"]} );
 document.body.appendChild(vrButton);
 
 
@@ -130,19 +133,7 @@ controllerGrip2 = renderer.xr.getControllerGrip(1);
 controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
 player.add(controllerGrip2);
 
-// Hand 1
-hand1 = renderer.xr.getHand( 0 );
-hand1.add( new OculusHandModel( hand1 ) );
-const handPointer1 = new OculusHandPointerModel( hand1, controller1 );
-hand1.add( handPointer1 );
-player.add( hand1 );
 
-// Hand 2
-hand2 = renderer.xr.getHand( 1 );
-hand2.add( new OculusHandModel( hand2 ) );
-const handPointer2 = new OculusHandPointerModel( hand2, controller2 );
-hand2.add( handPointer2 );
-player.add( hand2 );
 
 const geom = new THREE.BufferGeometry().setFromPoints( [ new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ] );
 
@@ -217,6 +208,84 @@ window.addEventListener(
   },
   false
 );
+
+
+
+
+
+
+// function updateOneHandGrab() {
+//     const lh = hand1;
+//     const rh = hand2;
+//     const nowLeftPinch = isPinching(lh);
+//     const nowRightPinch = isPinching(rh);
+//     // LEFT HAND GRAB
+//     if (nowLeftPinch && !leftPinching) {
+//         lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
+//         leftGrabOffset.copy(mesh.position).sub(leftGrabPos);
+//     }
+
+//     if (nowLeftPinch) {
+//         lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
+//         mesh.position.copy(leftGrabPos).add(leftGrabOffset);
+//     }
+
+//     leftPinching = nowLeftPinch;
+
+//     // RIGHT HAND GRAB
+//     if (nowRightPinch && !rightPinching) {
+//         rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
+//         rightGrabOffset.copy(mesh.position).sub(rightGrabPos);
+//     }
+
+//     if (nowRightPinch) {
+//         rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
+//         mesh.position.copy(rightGrabPos).add(rightGrabOffset);
+//     }
+
+//     rightPinching = nowRightPinch;
+// }
+
+
+// function updateTwoHandTransform() {
+//     if (!leftPinching || !rightPinching) return;
+//     // Get live hand positions
+//     const lh = hand1;
+//     const rh = hand2;
+
+//     lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
+//     rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
+
+//     const currentDistance = leftGrabPos.distanceTo(rightGrabPos);
+//     const currentDirection = new THREE.Vector3().subVectors(rightGrabPos, leftGrabPos).normalize();
+
+//     // If this is the *start* of two-hand interaction
+//     if (!initialDistance) {
+//         initialDistance = currentDistance;
+//         initialScale.copy(mesh.scale);
+
+//         mesh.getWorldQuaternion(initialRotation);
+//         return;
+//     }
+
+//     // --- SCALE ---
+//     const scaleFactor = currentDistance / initialDistance;
+//     mesh.scale.copy(initialScale).multiplyScalar(scaleFactor);
+
+//     // --- ROTATION ---
+//     const initialDir = new THREE.Vector3(1, 0, 0).applyQuaternion(initialRotation);
+//     const quaternionDelta = new THREE.Quaternion().setFromUnitVectors(initialDir, currentDirection);
+
+//     const newRotation = new THREE.Quaternion().multiplyQuaternions(quaternionDelta, initialRotation);
+//     mesh.quaternion.copy(newRotation);
+// }
+
+// // Reset two-hand state when either pinches stops
+// function resetTwoHandState() {
+//     if (!leftPinching || !rightPinching) {
+//         initialDistance = 0;
+//     }
+// }
 
 
 
@@ -316,6 +385,44 @@ ws.onmessage = async (event) => {
     console.warn("⚠️ VRButton not found in DOM");
   }
   }
+  
+  if (data.type === "onehand") {
+  mesh.position.add(new THREE.Vector3(
+    data.delta.x,
+    data.delta.y,
+    data.delta.z
+  ));
+  }
+  if (data.type === "transform") {
+
+    // TRANSLATION
+    mesh.position.add(new THREE.Vector3(
+      data.translate.x,
+      data.translate.y,
+      data.translate.z
+    ));
+
+    // SCALE
+    mesh.scale.multiplyScalar(data.scale);
+
+    // ROTATION
+    const from = new THREE.Vector3(
+      data.rotation.from.x,
+      data.rotation.from.y,
+      data.rotation.from.z
+    ).normalize();
+
+    const to = new THREE.Vector3(
+      data.rotation.to.x,
+      data.rotation.to.y,
+      data.rotation.to.z
+    ).normalize();
+
+    const q = new THREE.Quaternion().setFromUnitVectors(from, to);
+    mesh.quaternion.premultiply(q);
+  }
+
+
   if (data.type === "left")
   {
     handleControllerMovement("left",data.lx,data.ly,0);
@@ -443,9 +550,20 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
+
+
+  // updateOneHandGrab();
+  // updateTwoHandTransform();
+  // resetTwoHandState();
   equiLeft.update(newcamLeft, scene);
   equiRight.update(newcamRight, scene);
-  renderer.render(scene,camera);
+  
+  
+  
+  // renderer.render(scene,camera);
+
+
+
   
 });
 

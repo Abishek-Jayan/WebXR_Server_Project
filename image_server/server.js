@@ -41,6 +41,12 @@ wss.on("connection", (ws, req) => {
       headsetSocket = ws;
       console.log("Headset registered");
     }
+    if (data.type === "onehand" && streamerSocket) {
+      streamerSocket.send(JSON.stringify(data));
+    }
+    if (data.type === "transform" && streamerSocket) {
+      streamerSocket.send(JSON.stringify(data));
+    }
     if ((data.type === "left" || data.type === "right") && streamerSocket)
     {
       streamerSocket.send(JSON.stringify(data));

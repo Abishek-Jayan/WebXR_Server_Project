@@ -15,9 +15,9 @@ A Flask-based server-side VR rendering system using WebSockets to offload WebXR 
 ## Setup Instructions
 -  Need to set up SSL certificates for self signing for the https server to work. Generate certificate using this command ```openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes```
 
-- Set up a python virtual environment, then run the app file using python app.py (This runs the file locally)
+- Move those cert.pem and key.pem files into image_server.
 
-- To set up docker server ```sudo docker build -t flask-app .  ``` then ``` sudo docker run --gpus all -p 5000:5000 flask-app   ```
+- Go into each folder (ie, image_server and vr_client) and run ```npm install``` on each.
 
 
-In case there are errors with egl, just run ```pip install pyopengl==3.1.9```
+- Then run npm start on each folder and navigate to ```your_external_ip:3000``` on your browser to view the VR session. 

@@ -2,8 +2,6 @@ import * as THREE from "three";
 import { OrbitControls } from "./jsm/controls/OrbitControls.js";
 import { VRButton} from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
-import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
-import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial from "./raymarch.js";
@@ -56,7 +54,6 @@ mesh.scale.set(
   (sz / maxDim) * worldMax
 );
 
-let hand1, hand2;
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
 const camera = new THREE.PerspectiveCamera(
@@ -162,9 +159,9 @@ function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
     }
 
       if (handedness === "right") {
+
       // Right controller → vertical
       const ry = righty;
-      // some headsets report right stick Y on axes[1], fallback if needed
       const vertical = Math.abs(ry) > deadzone ? ry : 0;
 
       if (vertical !== 0) {
@@ -211,87 +208,8 @@ window.addEventListener(
 
 
 
-
-
-
-// function updateOneHandGrab() {
-//     const lh = hand1;
-//     const rh = hand2;
-//     const nowLeftPinch = isPinching(lh);
-//     const nowRightPinch = isPinching(rh);
-//     // LEFT HAND GRAB
-//     if (nowLeftPinch && !leftPinching) {
-//         lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
-//         leftGrabOffset.copy(mesh.position).sub(leftGrabPos);
-//     }
-
-//     if (nowLeftPinch) {
-//         lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
-//         mesh.position.copy(leftGrabPos).add(leftGrabOffset);
-//     }
-
-//     leftPinching = nowLeftPinch;
-
-//     // RIGHT HAND GRAB
-//     if (nowRightPinch && !rightPinching) {
-//         rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
-//         rightGrabOffset.copy(mesh.position).sub(rightGrabPos);
-//     }
-
-//     if (nowRightPinch) {
-//         rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
-//         mesh.position.copy(rightGrabPos).add(rightGrabOffset);
-//     }
-
-//     rightPinching = nowRightPinch;
-// }
-
-
-// function updateTwoHandTransform() {
-//     if (!leftPinching || !rightPinching) return;
-//     // Get live hand positions
-//     const lh = hand1;
-//     const rh = hand2;
-
-//     lh.joints["index-finger-tip"].getWorldPosition(leftGrabPos);
-//     rh.joints["index-finger-tip"].getWorldPosition(rightGrabPos);
-
-//     const currentDistance = leftGrabPos.distanceTo(rightGrabPos);
-//     const currentDirection = new THREE.Vector3().subVectors(rightGrabPos, leftGrabPos).normalize();
-
-//     // If this is the *start* of two-hand interaction
-//     if (!initialDistance) {
-//         initialDistance = currentDistance;
-//         initialScale.copy(mesh.scale);
-
-//         mesh.getWorldQuaternion(initialRotation);
-//         return;
-//     }
-
-//     // --- SCALE ---
-//     const scaleFactor = currentDistance / initialDistance;
-//     mesh.scale.copy(initialScale).multiplyScalar(scaleFactor);
-
-//     // --- ROTATION ---
-//     const initialDir = new THREE.Vector3(1, 0, 0).applyQuaternion(initialRotation);
-//     const quaternionDelta = new THREE.Quaternion().setFromUnitVectors(initialDir, currentDirection);
-
-//     const newRotation = new THREE.Quaternion().multiplyQuaternions(quaternionDelta, initialRotation);
-//     mesh.quaternion.copy(newRotation);
-// }
-
-// // Reset two-hand state when either pinches stops
-// function resetTwoHandState() {
-//     if (!leftPinching || !rightPinching) {
-//         initialDistance = 0;
-//     }
-// }
-
-
-
 			
 
-let time;
 
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -367,7 +285,6 @@ let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.
 let ipd = 0.064;
 newcamLeft.position.set(-ipd / 2, 0, 0);
 newcamRight.position.set(ipd / 2, 0, 0);
-let flag = true;
 const newplayer = new THREE.Group();
 newplayer.add(newcamLeft);
 newplayer.add(newcamRight);
@@ -442,18 +359,6 @@ ws.onmessage = async (event) => {
   forward.normalize();
 
   headsetForward.copy(forward);
-    // newplayer.quaternion.set(
-    //   data.quaternion.x,
-    //   data.quaternion.y,
-    //   data.quaternion.z,
-    //   data.quaternion.w
-    // );
-    // newplayer.position.set(
-    //   data.position.x,
-    //   data.position.y,
-    //   data.position.z,
-    // );
-
   }
 
   if (data.type === "answer") {
@@ -550,17 +455,12 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
-
-
-  // updateOneHandGrab();
-  // updateTwoHandTransform();
-  // resetTwoHandState();
   equiLeft.update(newcamLeft, scene);
   equiRight.update(newcamRight, scene);
   
   
   
-  // renderer.render(scene,camera);
+  renderer.render(scene,camera);
 
 
 

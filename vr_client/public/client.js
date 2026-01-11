@@ -4,14 +4,6 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 
-
-
-
-
-
-
-
-
 let hand1, hand2;
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
@@ -45,8 +37,6 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 const player = new THREE.Group();
 player.add(camera);
 scene.add(player);
-
-
 
 
 controller1 = renderer.xr.getController( 0 );
@@ -216,11 +206,6 @@ function sendOneHandGrab(hand, side) {
   }
 }
 
-
-
-
-
-
 const videoLeft = document.createElement("video");
 const videoRight = document.createElement("video");
 
@@ -334,7 +319,7 @@ renderer.setAnimationLoop(() => {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
-    }
+  }
   // Render scene into headset
   renderer.render(scene, camera);
   

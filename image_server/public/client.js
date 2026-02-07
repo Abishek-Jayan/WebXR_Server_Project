@@ -5,11 +5,13 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial from "./raymarch.js";
+import Stats from './jsm/libs/stats.module.js';
 
 const scene = new THREE.Scene();
-
-const nrrd = await new NRRDLoader().loadAsync("./mesh_voxelized(0.05).nrrd");
-
+const stats = new Stats();
+document.body.appendChild(stats.dom);
+const nrrd = await new NRRDLoader().loadAsync("./scaffold_mesh_voxelized(0.05).nrrd");
+console.log(nrrd);
 // Build 3D texture
 const texture3D = new THREE.Data3DTexture(
   nrrd.data,
@@ -439,9 +441,10 @@ streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 renderer.setAnimationLoop(function () {
-
+  stats.begin();
   const xrCam = renderer.xr.getCamera(camera);
   if (!xrCam.cameras || xrCam.cameras.length < 2) {
+      stats.end();
       return;  // ≠ VR mode yet → skip
   }
   const l = xrCam.cameras[0];
@@ -462,7 +465,7 @@ renderer.setAnimationLoop(function () {
   
   renderer.render(scene,camera);
 
-
+  stats.end();
 
   
 });

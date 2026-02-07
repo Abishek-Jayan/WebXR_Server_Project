@@ -3,12 +3,15 @@ import { VRButton} from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
+import Stats from './jsm/libs/stats.module.js';
+
 
 let hand1, hand2;
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
 
-
+const stats = new Stats();
+document.body.appendChild(stats.dom);
 // Create Three.js scene
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(
@@ -271,7 +274,7 @@ ws.onopen = () => {
 };
 
 renderer.setAnimationLoop(() => {
-
+  stats.begin();
 
 
   const leftPinch = isPinching(hand1);
@@ -322,7 +325,7 @@ renderer.setAnimationLoop(() => {
   }
   // Render scene into headset
   renderer.render(scene, camera);
-  
+  stats.end();
 });
 
 

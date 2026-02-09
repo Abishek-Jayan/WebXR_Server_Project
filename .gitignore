@@ -22,3 +22,4 @@ image_server/public/mesh_voxelized(0.05).nrrd
 image_server/public/scaffold_mesh(0.05).ply
 .gitignore
 image_server/public/scaffold_mesh_voxelized(0.05).nrrd
+image_server/metrics/*

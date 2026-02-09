@@ -1,21 +1,61 @@
 # VorteXR
 
-A NodeJS-based server-side VR rendering system using WebRTC to offload WebXR computation.Observed lower latency under local Wi-Fi in our prototype
+VorteXR is a Node.js-based server-side rendering (SSR) prototype for WebXR. A headless, GPU-accelerated Three.js renderer generates stereoscopic views on the server and streams them to a lightweight WebXR client using WebRTC, while pose and interaction data are exchanged over a low-bandwidth control channel (WebSocket).
+
+**Status:** proof-of-concept. We observed lower end-to-end responsiveness under local Wi-Fi in our prototype setup; results may vary with network conditions and hardware.
 
 ## Features
+- ✅ Server-side rendering for WebXR experiences (GPU backend)
+- 🥽 Stereoscopic streaming to WebXR clients (WebRTC)
+- 🔄 Control/interaction channel (WebSocket)
+- 🔐 HTTPS support via self-signed SSL certificates
 
-- ✅ Server-side rendering for WebXR experiences  
-- 🔄 Real-time communication via WebRTC and WebSockets  
-- 🔐 HTTPS support via self-signed SSL certificates  
+## Repository structure
+- `image_server/` — signaling + backend renderer/streamer
+- `vr_client/` — WebXR client for receiving streams and sending control inputs
 
----
+## Prerequisites
+- Node.js + npm (recommended: Node 18+)
+- A WebXR-capable browser on the client device
+- GPU acceleration on the server is recommended for real-time performance
+- Local network (Wi-Fi/LAN) recommended for best latency
 
-## Setup Instructions
--  Need to set up SSL certificates for self signing for the https server to work. Generate certificate using this command ```openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes```
+## Setup (self-signed HTTPS)
 
-- Move those cert.pem and key.pem files into image_server.
+- Generate certificates (you can run this in the repo root):
 
-- Go into each folder (ie, image_server and vr_client) and run ```npm install``` on each.
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
+```
+- Move key.pem and cert.pem into: image_server/
 
+## Install + Run
 
-- Then run npm start on each folder and navigate to ```your_external_ip:3000``` on your browser to view the VR session. 
+- Install dependencies in both folders:
+``` bash
+cd image_server && npm install
+cd ../vr_client && npm install
+```
+- Start both services (in two terminals):
+
+### Terminal 1
+```bash
+cd image_server && npm start
+```
+### Terminal 2
+```bash
+cd vr_client && npm start
+```
+- Open the client in a browser:
+```bash
+https://<server-ip>:3000
+```
+Note: because the certificate is self-signed, your browser/device may require a one-time “Proceed / Advanced” trust step.
+
+## Limitations / Notes
+
+- Designed and tested primarily under local/controlled Wi-Fi.
+
+- This system supports 3DoF rotational look-around via spherical video sampling with stereo disparity. Translation is supported as a navigation/locomotion metaphor (not positional-parallax-correct 6DoF view synthesis).
+
+- Not production-hardened (no authentication, TURN deployment guidance, etc.).

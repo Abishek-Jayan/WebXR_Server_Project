@@ -1,13 +1,12 @@
 # VorteXR
 
-A NodeJS-based server-side VR rendering system using WebRTC to offload WebXR computation.
+A NodeJS-based server-side VR rendering system using WebRTC to offload WebXR computation.Observed lower latency under local Wi-Fi in our prototype
 
 ## Features
 
 - ✅ Server-side rendering for WebXR experiences  
-- 🔄 Real-time communication via WebSockets  
+- 🔄 Real-time communication via WebRTC and WebSockets  
 - 🔐 HTTPS support via self-signed SSL certificates  
-- 📉 Frame latency reduced by 70% for smoother VR experiences  
 
 ---
 

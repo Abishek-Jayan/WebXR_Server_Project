@@ -1,6 +1,6 @@
 # VorteXR
 
-A NodeJS-based server-side VR rendering system using WebRTC to offload WebXR computation. This system reduces frame latency by up to **70%** (from 130ms to 25ms) across 100 tested sessions, enabling **platform-agnostic**, low-latency VR experiences on **low-end devices**.
+A NodeJS-based server-side VR rendering system using WebRTC to offload WebXR computation.
 
 ## Features
 

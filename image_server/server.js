@@ -96,7 +96,6 @@ wss.on("connection", (ws, req) => {
 });
 
 
-const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
 
 server.listen(PORT, "0.0.0.0", async () => {
   console.log(`Streamer server running on https://0.0.0.0:${PORT}`);
@@ -112,8 +111,6 @@ server.listen(PORT, "0.0.0.0", async () => {
       "--use-angle=vulkan",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
-      `--disable-extensions-except=${pathToExtension}`,
-      `--load-extension=${pathToExtension}`,
       
     ],
   });

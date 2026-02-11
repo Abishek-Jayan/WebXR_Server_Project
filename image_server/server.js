@@ -95,23 +95,11 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-function getLocalIp() {
-  const interfaces = os.networkInterfaces();
-  for (const name in interfaces) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === "IPv4" && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return "10.24.46.139";
-}
+
 const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
 
 server.listen(PORT, "0.0.0.0", async () => {
-  const host = getLocalIp();
   console.log(`Streamer server running on https://0.0.0.0:${PORT}`);
-  console.log(`WebSocket address: wss://${host}:${PORT}`);
 
   const browser = await puppeteer.launch({
     ignoreHTTPSErrors: true,

@@ -29,6 +29,9 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 ```
 - Move key.pem and cert.pem into: image_server/
 
+IMPORTANT NOTES:-
+- Puppeteer by default does not support VR. Download the Immersive-Web-Emulator-Chrome-Web-Store extension as a folder from the Chrome WebStore and move it into image_server/
+- Also define an env.js somewhere in the codebase, define your public HOSTNAME there and then import it to image_server/public/client.js, image_server/server.js, vr_client/server.js, vr_client/public/client.js
 ## Install + Run
 
 - Install dependencies in both folders:

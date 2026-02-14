@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import Stats from './jsm/libs/stats.module.js';
-
+import HOSTNAME from "../../image_server/public/env.js";
 
 let hand1, hand2;
 let controller1, controller2;
@@ -20,6 +20,7 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
+scene.background = new THREE.Color(0x658CBB); // Set background to red
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
 scene.add(ambientLight);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -226,15 +227,14 @@ videoTextureRight.generateMipmaps = false;
 videoTextureRight.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
 
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, toneMapped: false });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, toneMapped: false});
+const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, toneMapped: false, side: THREE.BackSide });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, toneMapped: false, side: THREE.BackSide});
 
 
 // Create a sphere that surrounds the user
 const radius = 10.0; // Adjust for comfort (1.5–3.0)
 const sphereGeometry = new THREE.SphereGeometry(radius, 60, 40);
 // Invert the faces to render inside
-sphereGeometry.scale(-1, 1, 1); // Critical: flip normals inward
 
 
 const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
@@ -259,14 +259,10 @@ videoSphereRight.layers.set(2);
 
 
 const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }, {
-    urls: "turn:your-turn-server.com:3478",
-    username: "user",
-    credential: "pass"
-  }]
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     });
 
-const ws = new WebSocket("wss://10.24.46.139:3001"); // connect to streamer server
+const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
 
 ws.onopen = () => {
   console.log("Connected to signaling server (headset)");
@@ -360,7 +356,6 @@ ws.onmessage = async (event) => {
   }
 
   if (data.type === "candidate") {
-    console.log("Received ICE candidate from streamer");
     try {
       await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
     } catch (err) {
@@ -385,12 +380,9 @@ pc.ontrack = (event) => {
 // Send ICE candidates
 pc.onicecandidate = (event) => {
   if (event.candidate) {
-    ws.send(
-      JSON.stringify({
-        role: "headset",
-        type: "candidate",
-        candidate: event.candidate,
-      })
-    );
-  }
+    ws.send(JSON.stringify({
+      type: "candidate",
+      candidate: event.candidate,
+    }));
+  } 
 };

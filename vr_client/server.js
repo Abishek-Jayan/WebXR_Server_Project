@@ -2,6 +2,7 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { default: HOSTNAME } = require('../image_server/public/env');
 
 const app = express();
 
@@ -18,6 +19,6 @@ const options = {
 
 // create HTTPS server
 https.createServer(options, app).listen(3000, '0.0.0.0', () => {
-  console.log('Server running on https://<your-pc-ip>:3000');
+  console.log(`Server running on https://${HOSTNAME}:3000`);
 });
 

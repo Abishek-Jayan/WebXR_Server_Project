@@ -6,11 +6,17 @@ import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
+import HOSTNAME from "./env.js";
+
+
+const renderWidth = 1920; // desired output width
+const renderHeight = 1080; // desired output height
+
 
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./scaffold_mesh_voxelized(0.05).nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./mesh_voxelized(0.05).nrrd");
 console.log(nrrd);
 // Build 3D texture
 const texture3D = new THREE.Data3DTexture(
@@ -22,10 +28,19 @@ const texture3D = new THREE.Data3DTexture(
 
 const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
 
-
+function threeTypeForTypedArray(arr) {
+  if (arr instanceof Uint8Array) return THREE.UnsignedByteType;
+  if (arr instanceof Int8Array) return THREE.ByteType;
+  if (arr instanceof Uint16Array) return THREE.UnsignedShortType;
+  if (arr instanceof Int16Array) return THREE.ShortType;
+  if (arr instanceof Uint32Array) return THREE.UnsignedIntType;
+  if (arr instanceof Int32Array) return THREE.IntType;
+  if (arr instanceof Float32Array) return THREE.FloatType;
+  throw new Error("Unsupported NRRD data array type: " + arr.constructor.name);
+}
 
 texture3D.format = THREE.RedFormat;
-texture3D.type = THREE.UnsignedByteType;   // For 8-bit NRRD
+texture3D.type = threeTypeForTypedArray(nrrd.data);   // For 8-bit NRRD
 texture3D.minFilter = THREE.LinearFilter;
 texture3D.magFilter = THREE.LinearFilter;
 texture3D.unpackAlignment = 1;
@@ -81,12 +96,6 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 
 
 
-
-
-
-
-const renderWidth = 1920; // desired output width
-const renderHeight = 1080; // desired output height
 renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
@@ -218,8 +227,7 @@ const pc = new RTCPeerConnection({
 });
 
 
-
-const ws = new WebSocket(`wss://10.24.46.139:3001`); // connect to server.js
+const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
 
 ws.onopen = async () => {
   console.log("Connected to signaling server (streamer)");
@@ -243,7 +251,7 @@ ws.onopen = async () => {
   }
   
   // Create offer to headset
-  const offer = await pc.createOffer({ offerToReceiveVideo: true });
+  const offer = await pc.createOffer();
   offer.sdp = preferH264(offer.sdp);
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
@@ -370,8 +378,7 @@ ws.onmessage = async (event) => {
 
   
   if (data.type === "candidate") {
-    console.log("Received ICE candidate from headset");
-    try {
+      try {
       await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
     } catch (err) {
       console.error("Error adding ICE candidate:", err);
@@ -384,7 +391,6 @@ pc.onicecandidate = (event) => {
   if (event.candidate) {
     ws.send(
       JSON.stringify({
-        role: "streamer",
         type: "candidate",
         candidate: event.candidate,
       })

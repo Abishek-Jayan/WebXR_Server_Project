@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 const os = require("os");
+const { default: HOSTNAME } = require("./public/env");
 
 const PORT = 3001;
 
@@ -30,17 +31,31 @@ let streamerSocket = null;
 let headsetSocket = null;
 let pendingOffer = null;
 wss.on("connection", (ws, req) => {
-  console.log("New WebSocket connection");
-
+  console.log("WS connected:", req.socket.remoteAddress, "id=", Date.now());
+  ws.role = null;
   ws.on("message", (msg) => {
-    const data = JSON.parse(msg);
-    if (data.role === "streamer") {
+    let data = JSON.parse(msg);
+    if (data.role && !ws.role) {
+      ws.role = data.role; // "streamer" or "headset"
+    if (ws.role === "streamer") {
       streamerSocket = ws;
       console.log("Streamer registered");
+      if (headsetSocket && pendingOffer) {
+          console.log("Sending queued offer to headset");
+          headsetSocket.send(JSON.stringify(pendingOffer));
+          pendingOffer = null;
+        }
     } else if (data.role === "headset") {
       headsetSocket = ws;
       console.log("Headset registered");
+      if (pendingOffer) {
+          console.log("Sending queued offer to headset");
+          headsetSocket.send(JSON.stringify(pendingOffer));
+          pendingOffer = null;
+        }
     }
+    return;
+  }
     if (data.type === "onehand" && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
@@ -69,6 +84,7 @@ wss.on("connection", (ws, req) => {
         console.log("Headset not connected, queuing offer");
         pendingOffer = data;
       }
+      return;
     }
 
     if (data.type === "answer" && streamerSocket) {
@@ -76,29 +92,28 @@ wss.on("connection", (ws, req) => {
       streamerSocket.send(JSON.stringify(data));
     }
     if (data.type === "candidate") {
-      if (ws === streamerSocket && headsetSocket) {
-        headsetSocket.send(JSON.stringify(data));
-      } else if (ws === headsetSocket && streamerSocket) {
-        streamerSocket.send(JSON.stringify(data));
-      }
-    }
-    if (pendingOffer && ws === headsetSocket) {
-    console.log("Sending queued offer to headset");
-    headsetSocket.send(JSON.stringify(pendingOffer));
-    pendingOffer = null;
+      if (ws.role === "streamer" && headsetSocket) {
+    headsetSocket.send(JSON.stringify(data));
+  } else if (ws.role === "headset" && streamerSocket) {
+    streamerSocket.send(JSON.stringify(data));
   }
+  return;
+    }
+
   });
 
   ws.on("close", () => {
+    console.log("WS closed. Was streamer?", ws === streamerSocket, "Was headset?", ws === headsetSocket);
     if (ws === streamerSocket) streamerSocket = null;
     if (ws === headsetSocket) headsetSocket = null;
   });
 });
 
+const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
 
 
 server.listen(PORT, "0.0.0.0", async () => {
-  console.log(`Streamer server running on https://0.0.0.0:${PORT}`);
+  console.log(`Streamer server running on https://${HOSTNAME}:${PORT}`);
 
   const browser = await puppeteer.launch({
     ignoreHTTPSErrors: true,
@@ -108,9 +123,11 @@ server.listen(PORT, "0.0.0.0", async () => {
     args: [
       "--enable-gpu",
       "--no-sandbox",
-      "--use-angle=vulkan",
+      "--use-vulkan",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
+      `--disable-extensions-except=${pathToExtension}`,
+      `--load-extension=${pathToExtension}`,
       
     ],
   });

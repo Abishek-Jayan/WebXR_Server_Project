@@ -10,14 +10,6 @@ env/
 node_modules/
 Immersive-Web-Emulator-Chrome-Web-Store/
 puppeteer_profile/
-image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.tif
-image_server/public/sc_test_cropped_tif_brightness_and_contrast_adjusted.nrrd
-image_server/public/sc_test_cropped_tif_enhanced.nrrd
-image_server/public/new_file.nrrd
-image_server/public/sc_test_cropped_tif.nrrd
-image_server/public/mesh_voxelized.nrrd
-image_server/public/mesh_voxelized(0.05).nrrd
-image_server/public/scaffold_mesh(0.05).ply
-image_server/public/scaffold_mesh_voxelized(0.05).nrrd
-image_server/metrics/*
+image_server/public/static/*
 image_server/public/env.js
+

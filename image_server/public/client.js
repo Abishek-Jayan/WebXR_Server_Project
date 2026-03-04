@@ -16,7 +16,7 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/halle_skull_2D_16bit.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatA_greyscale.nrrd");
 const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
 const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB per slab

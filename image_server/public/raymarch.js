@@ -47,8 +47,8 @@ const material = new THREE.ShaderMaterial({
 
             // your box is from -10..10 in each axis in world, but in object space you can
             // normalize to -1..1 or 0..1. Suppose box is -1..1:
-            vec3 boxMin = vec3(-1.0);
-            vec3 boxMax = vec3( 1.0);
+            vec3 boxMin = vec3(-0.5);
+            vec3 boxMax = vec3(0.5);
 
             vec2 bounds = intersectBox(vOrigin, rayDir, boxMin, boxMax);
             if (bounds.x > bounds.y) discard;
@@ -57,13 +57,13 @@ const material = new THREE.ShaderMaterial({
             float tEnd = bounds.y;
 
             float accum = 0.0;
-            const int STEPS = 256;
+            const int STEPS = 64;
             float dt = (tEnd - t) / float(STEPS);
 
             for (int i = 0; i < STEPS; i++) {
                 vec3 pos = vOrigin + rayDir * (t + float(i) * dt);
                 // map from [-1,1] to [0,1]
-                vec3 texPos = pos * 0.5 + 0.5;
+                vec3 texPos = pos + 0.5;
                 float val = texture(volumeTex, texPos).r;
                 accum += val * 0.02;
             }

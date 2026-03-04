@@ -16,38 +16,21 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./mesh_voxelized(0.05).nrrd");
-console.log(nrrd);
-// Build 3D texture
-const texture3D = new THREE.Data3DTexture(
-  nrrd.data,
-  nrrd.xLength,
-  nrrd.yLength,
-  nrrd.zLength
-);
+const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatD_greyscale.nrrd");
+const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
-const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
 
-function threeTypeForTypedArray(arr) {
-  if (arr instanceof Uint8Array) return THREE.UnsignedByteType;
-  if (arr instanceof Int8Array) return THREE.ByteType;
-  if (arr instanceof Uint16Array) return THREE.UnsignedShortType;
-  if (arr instanceof Int16Array) return THREE.ShortType;
-  if (arr instanceof Uint32Array) return THREE.UnsignedIntType;
-  if (arr instanceof Int32Array) return THREE.IntType;
-  if (arr instanceof Float32Array) return THREE.FloatType;
-  throw new Error("Unsupported NRRD data array type: " + arr.constructor.name);
-}
-
+const texture3D = new THREE.Data3DTexture(src, nrrd.xLength, nrrd.yLength, nrrd.zLength);
 texture3D.format = THREE.RedFormat;
-texture3D.type = threeTypeForTypedArray(nrrd.data);   // For 8-bit NRRD
+texture3D.type = THREE.UnsignedByteType;
 texture3D.minFilter = THREE.LinearFilter;
 texture3D.magFilter = THREE.LinearFilter;
 texture3D.unpackAlignment = 1;
 texture3D.needsUpdate = true;
-
+console.log("rayMarchMaterial =", rayMarchMaterial);
+console.log("uniforms =", rayMarchMaterial?.uniforms);
+console.log("volumeTex =", rayMarchMaterial?.uniforms?.volumeTex);
 rayMarchMaterial.uniforms.volumeTex.value = texture3D;
-rayMarchMaterial.uniforms.dims.value.set(nrrd.xLength, nrrd.yLength, nrrd.zLength);
 
 const geometry = new THREE.BoxGeometry(1, 1, 1);  // size in world units
 const material = new THREE.ShaderMaterial({
@@ -63,14 +46,13 @@ const mesh = new THREE.Mesh(geometry, material);
 
 const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
 const maxDim = Math.max(sx, sy, sz);
-const worldMax = 20; // choose how big the volume should be in world units
+const worldMax = 10; // choose how big the volume should be in world units
 
 mesh.scale.set(
   (sx / maxDim) * worldMax,
   (sy / maxDim) * worldMax,
   (sz / maxDim) * worldMax
 );
-
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
 const camera = new THREE.PerspectiveCamera(
@@ -96,7 +78,6 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 
 
 
-renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
 renderer.domElement.style.width = window.innerWidth + "px";
@@ -183,6 +164,7 @@ function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
   
 }
 
+const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
 
 
 function movePlayerHorizontal(x, y) {

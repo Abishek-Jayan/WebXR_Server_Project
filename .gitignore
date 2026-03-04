@@ -8,8 +8,11 @@ env/
 *.pem
 *.pdb
 node_modules/
-Immersive-Web-Emulator-Chrome-Web-Store/
+image_server/Immersive-Web-Emulator-Chrome-Web-Store/
+image_server/WebXR-emulator-extension/
 puppeteer_profile/
 image_server/public/static/*
 image_server/public/env.js
 
+image_server/server2.js
+image_server/public/client2.js

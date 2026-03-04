@@ -120,14 +120,13 @@ server.listen(PORT, "0.0.0.0", async () => {
     headless: true,
     pipe: true,
     devtools: true,
+    enableExtensions: [pathToExtension],
     args: [
       "--enable-gpu",
       "--no-sandbox",
       "--use-vulkan",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
-      `--disable-extensions-except=${pathToExtension}`,
-      `--load-extension=${pathToExtension}`,
       
     ],
   });

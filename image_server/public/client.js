@@ -4,7 +4,7 @@ import { VRButton} from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
-import rayMarchMaterial from "./raymarch.js";
+import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
 import HOSTNAME from "./env.js";
 
@@ -16,21 +16,48 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatD_greyscale.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/halle_skull_2D_16bit.nrrd");
 const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
+const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB per slab
+const totalBytes = nrrd.xLength * nrrd.yLength * nrrd.zLength; // Uint8 = 1 byte/voxel
+const numSlabs = Math.max(1, Math.ceil(totalBytes / MAX_SLAB_BYTES));
+if (numSlabs > MAX_SLABS) throw new Error(`Volume requires ${numSlabs} slabs but MAX_SLABS is ${MAX_SLABS}. Reduce MAX_SLAB_BYTES or increase MAX_SLABS in raymarch.js.`);
+const slabDepth = Math.ceil(nrrd.zLength / numSlabs);
 
-const texture3D = new THREE.Data3DTexture(src, nrrd.xLength, nrrd.yLength, nrrd.zLength);
-texture3D.format = THREE.RedFormat;
-texture3D.type = THREE.UnsignedByteType;
-texture3D.minFilter = THREE.LinearFilter;
-texture3D.magFilter = THREE.LinearFilter;
-texture3D.unpackAlignment = 1;
-texture3D.needsUpdate = true;
+console.log(`Volume: ${nrrd.xLength}x${nrrd.yLength}x${nrrd.zLength}, ${(totalBytes / 1e9).toFixed(2)} GB → ${numSlabs} slab(s)`);
+
+const slabTextures = [];
+const slabStarts = new Array(MAX_SLABS).fill(0);
+const slabEnds = new Array(MAX_SLABS).fill(0);
+
+for (let s = 0; s < numSlabs; s++) {
+    const zStart = s * slabDepth;
+    const zEnd = Math.min(zStart + slabDepth, nrrd.zLength);
+    const depth = zEnd - zStart;
+
+    const chunk = new Uint8Array(nrrd.xLength * nrrd.yLength * depth);
+    chunk.set(src.subarray(zStart * nrrd.xLength * nrrd.yLength, zEnd * nrrd.xLength * nrrd.yLength));
+
+    const tex = new THREE.Data3DTexture(chunk, nrrd.xLength, nrrd.yLength, depth);
+    tex.format = THREE.RedFormat;
+    tex.type = THREE.UnsignedByteType;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.unpackAlignment = 1;
+    tex.needsUpdate = true;
+
+    slabTextures.push(tex);
+    slabStarts[s] = zStart / nrrd.zLength;
+    slabEnds[s]   = zEnd   / nrrd.zLength;
+}
+
 console.log("rayMarchMaterial =", rayMarchMaterial);
 console.log("uniforms =", rayMarchMaterial?.uniforms);
-console.log("volumeTex =", rayMarchMaterial?.uniforms?.volumeTex);
-rayMarchMaterial.uniforms.volumeTex.value = texture3D;
+rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;
+rayMarchMaterial.uniforms.slabStarts.value = slabStarts;
+rayMarchMaterial.uniforms.slabEnds.value = slabEnds;
+rayMarchMaterial.uniforms.numSlabs.value = numSlabs;
 
 const geometry = new THREE.BoxGeometry(1, 1, 1);  // size in world units
 const material = new THREE.ShaderMaterial({

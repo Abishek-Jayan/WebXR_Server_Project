@@ -1,15 +1,17 @@
 import * as THREE from "three";
 
+export const MAX_SLABS = 8;
+
 const material = new THREE.ShaderMaterial({
 
     uniforms: {
-        volumeTex: { value: null },                   // ← You fill these in later
-        dims:      { value: new THREE.Vector3(1,1,1) }
+        volumeTextures: { value: new Array(MAX_SLABS).fill(null) },
+        slabStarts:     { value: new Array(MAX_SLABS).fill(0) },
+        slabEnds:       { value: new Array(MAX_SLABS).fill(0) },
+        numSlabs:       { value: 1 },
     },
 
-    
     vertexShader: `
-        // vertexShader
         varying vec3 vOrigin;
         varying vec3 vDirection;
 
@@ -17,7 +19,7 @@ const material = new THREE.ShaderMaterial({
             vec4 worldPos = modelMatrix * vec4(position, 1.0);
             vec4 camInObject = inverse(modelMatrix) * vec4(cameraPosition, 1.0);
             vOrigin = camInObject.xyz;
-            vDirection = position - vOrigin;   // ray toward this fragment in object space
+            vDirection = position - vOrigin;
             gl_Position = projectionMatrix * viewMatrix * worldPos;
         }
     `,
@@ -26,7 +28,12 @@ const material = new THREE.ShaderMaterial({
         precision highp float;
         precision highp sampler3D;
 
-        uniform sampler3D volumeTex;
+        #define MAX_SLABS ${MAX_SLABS}
+
+        uniform sampler3D volumeTextures[MAX_SLABS];
+        uniform float slabStarts[MAX_SLABS];
+        uniform float slabEnds[MAX_SLABS];
+        uniform int numSlabs;
 
         varying vec3 vOrigin;
         varying vec3 vDirection;
@@ -42,11 +49,18 @@ const material = new THREE.ShaderMaterial({
             return vec2(t0, t1);
         }
 
+        float sampleVolume(vec3 texPos) {
+            ${Array.from({ length: MAX_SLABS }, (_, s) => `
+            if (${s} < numSlabs && texPos.z >= slabStarts[${s}] && texPos.z <= slabEnds[${s}]) {
+                float localZ = (texPos.z - slabStarts[${s}]) / (slabEnds[${s}] - slabStarts[${s}]);
+                return texture(volumeTextures[${s}], vec3(texPos.xy, localZ)).r;
+            }`).join('')}
+            return 0.0;
+        }
+
         void main() {
             vec3 rayDir = normalize(vDirection);
 
-            // your box is from -10..10 in each axis in world, but in object space you can
-            // normalize to -1..1 or 0..1. Suppose box is -1..1:
             vec3 boxMin = vec3(-0.5);
             vec3 boxMax = vec3(0.5);
 
@@ -62,9 +76,8 @@ const material = new THREE.ShaderMaterial({
 
             for (int i = 0; i < STEPS; i++) {
                 vec3 pos = vOrigin + rayDir * (t + float(i) * dt);
-                // map from [-1,1] to [0,1]
                 vec3 texPos = pos + 0.5;
-                float val = texture(volumeTex, texPos).r;
+                float val = sampleVolume(texPos);
                 accum += val * 0.02;
             }
 

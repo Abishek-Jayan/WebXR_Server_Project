@@ -29,13 +29,41 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer, {optionalFeatures: ["hand-tracking", "layers"]} ));
 renderer.xr.enabled = true;
-camera.layers.enable(1); // Left eye sees layer 1
-camera.layers.enable(2); // Right eye sees layer 2
-
-renderer.xr.addEventListener("sessionstart", ()=> {
+    camera.layers.enable(1);
+    camera.layers.enable(2);
+renderer.xr.addEventListener("sessionstart", async () => {
   console.log("VR Session Started");
-    ws.send(JSON.stringify({ xr: true }));
 
+  const session = renderer.xr.getSession();
+  const hasLayers = typeof XRMediaBinding !== 'undefined';
+
+  if (hasLayers) {
+    try {
+      const refSpace = await session.requestReferenceSpace("local");
+      const mediaBinding = new XRMediaBinding(session);
+      const equirectLayer = mediaBinding.createEquirectangularLayer(video, {
+        space: refSpace,
+        layout: "stereo-top-bottom",
+        centralHorizontalAngle: 2 * Math.PI,
+        upperVerticalAngle: Math.PI / 2,
+        lowerVerticalAngle: Math.PI / 2,
+      });
+      session.updateRenderState({ layers: [equirectLayer] });
+      console.log("XRMediaBinding equirect layer set up successfully");
+    } catch (e) {
+      console.error("XRMediaBinding failed, falling back to video spheres:", e);
+      player.add(videoSphereLeft);
+      player.add(videoSphereRight);
+      videoSphereLeft.layers.set(1);
+      videoSphereRight.layers.set(2);
+    }
+  } else {
+    console.log("XRMediaBinding not available, using video spheres");
+    player.add(videoSphereLeft);
+    player.add(videoSphereRight);
+    videoSphereLeft.layers.set(1);
+    videoSphereRight.layers.set(2);
+  }
 });
 
 
@@ -211,52 +239,40 @@ function sendOneHandGrab(hand, side) {
   }
 }
 
-const videoLeft = document.createElement("video");
-const videoRight = document.createElement("video");
+const video = document.createElement("video");
+video.autoplay = true;
+video.playsInline = true;
+video.muted = true;
 
-// Create a texture from your 2D canvas
-const videoTextureLeft = new THREE.VideoTexture(videoLeft);
-videoTextureLeft.minFilter = THREE.LinearFilter;
-videoTextureLeft.magFilter = THREE.LinearFilter;
-videoTextureLeft.generateMipmaps = false;
-videoTextureLeft.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+// Left eye samples top half of the combined stereo video
+const texLeft = new THREE.VideoTexture(video);
+texLeft.minFilter = THREE.LinearFilter;
+texLeft.magFilter = THREE.LinearFilter;
+texLeft.generateMipmaps = false;
+texLeft.colorSpace = THREE.SRGBColorSpace;
+texLeft.repeat.set(1, 0.5);
+texLeft.offset.set(0, 0.5);
 
-const videoTextureRight = new THREE.VideoTexture(videoRight);
-videoTextureRight.minFilter = THREE.LinearFilter;
-videoTextureRight.magFilter = THREE.LinearFilter;
-videoTextureRight.generateMipmaps = false;
-videoTextureRight.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+// Right eye samples bottom half of the combined stereo video
+const texRight = new THREE.VideoTexture(video);
+texRight.minFilter = THREE.LinearFilter;
+texRight.magFilter = THREE.LinearFilter;
+texRight.generateMipmaps = false;
+texRight.colorSpace = THREE.SRGBColorSpace;
+texRight.repeat.set(1, 0.5);
+texRight.offset.set(0, 0);
 
+const videoMaterialLeft  = new THREE.MeshBasicMaterial({ map: texLeft,  toneMapped: false, side: THREE.BackSide });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: texRight, toneMapped: false, side: THREE.BackSide });
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, toneMapped: false, side: THREE.BackSide });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, toneMapped: false, side: THREE.BackSide});
-
-
-// Create a sphere that surrounds the user
-const radius = 10.0; // Adjust for comfort (1.5–3.0)
-const sphereGeometry = new THREE.SphereGeometry(radius, 60, 40);
-// Invert the faces to render inside
-
-
-const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
+const sphereGeometry = new THREE.SphereGeometry(10.0, 60, 40);
+const videoSphereLeft  = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
 const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
-
-
-
-videoLeft.autoplay = true;
-videoLeft.playsInline = true;
-videoLeft.muted = true;  // WebRTC requires muted autoplay sometimes
-videoRight.autoplay = true;
-videoRight.playsInline = true;
-videoRight.muted = true;  // WebRTC requires muted autoplay sometimes
+// spheres are added to scene in sessionstart (fallback path only)
 
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
-player.add(videoSphereLeft);
-player.add(videoSphereRight);
-videoSphereLeft.layers.set(1);
-videoSphereRight.layers.set(2);
 
 
 const pc = new RTCPeerConnection({
@@ -365,17 +381,10 @@ ws.onmessage = async (event) => {
   }
 };
 
-let res = [];
 pc.ontrack = (event) => {
-    console.log("ontrack fired:", event.track, "streams:", event.streams);
-    res.push(event.streams[0]);
-    console.log(res);
-    if (res.length == 2) {
-      videoLeft.srcObject = res[0];
-      videoRight.srcObject = res[1];
-      videoLeft.play();
-      videoRight.play();
-    }
+  console.log("ontrack fired:", event.track, "streams:", event.streams);
+  video.srcObject = event.streams[0];
+  video.play();
 };
 
 // Send ICE candidates
@@ -387,53 +396,4 @@ pc.onicecandidate = (event) => {
     }));
   }
 };
-print_network_log();
-// Network metrics polling: jitter, packet loss, dropped frames
-const prevInboundStats = {};
-
-setInterval(async () => {
-  if (pc.connectionState !== 'connected') return;
-  const stats = await pc.getStats();
-  stats.forEach(report => {
-    if (report.type !== 'inbound-rtp' || report.kind !== 'video') return;
-    const id = report.ssrc;
-    const prev = prevInboundStats[id] || {};
-
-    const jitterMs = ((report.jitter || 0) * 1000).toFixed(1);
-
-    const packetsLost = report.packetsLost || 0;
-    const packetsReceived = report.packetsReceived || 0;
-    const totalPackets = packetsLost + packetsReceived;
-    const lossRateTotal = totalPackets > 0
-      ? ((packetsLost / totalPackets) * 100).toFixed(2)
-      : '0.00';
-
-    const dtLost = packetsLost - (prev.packetsLost || 0);
-    const dtRecv = packetsReceived - (prev.packetsReceived || 0);
-    const dtTotal = dtLost + dtRecv;
-    const lossRateInterval = dtTotal > 0
-      ? ((dtLost / dtTotal) * 100).toFixed(2)
-      : '0.00';
-
-    const framesDropped = report.framesDropped || 0;
-    const framesReceived = report.framesReceived || 0;
-    const dropRateTotal = framesReceived > 0
-      ? ((framesDropped / framesReceived) * 100).toFixed(2)
-      : '0.00';
-
-    const dtDropped = framesDropped - (prev.framesDropped || 0);
-    const dtFramesRecv = framesReceived - (prev.framesReceived || 0);
-    const dropRateInterval = dtFramesRecv > 0
-      ? ((dtDropped / dtFramesRecv) * 100).toFixed(2)
-      : '0.00';
-
-    console.log(
-      `[VR-NET ssrc=${id}] ` +
-      `jitter=${jitterMs}ms | ` +
-      `pktLoss(cumul)=${lossRateTotal}% pktLoss(2s)=${lossRateInterval}% [lost=${dtLost} recv=${dtRecv}] | ` +
-      `frameDrop(cumul)=${dropRateTotal}% frameDrop(2s)=${dropRateInterval}% [dropped=${dtDropped} recv=${dtFramesRecv}]`
-    );
-
-    prevInboundStats[id] = { packetsLost, packetsReceived, framesDropped, framesReceived };
-  });
-}, 2000);
+print_network_log(pc);

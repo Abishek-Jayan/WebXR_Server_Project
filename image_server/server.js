@@ -69,9 +69,6 @@ wss.on("connection", (ws, req) => {
     if (data.type === "pose" && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
-    if (data.xr && streamerSocket) {
-      streamerSocket.send(JSON.stringify(data));
-    }
     if (data.move && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
@@ -109,14 +106,15 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
+const pathToExtension = path.join(__dirname, "WebXR-emulator-extension");
 
 
 server.listen(PORT, "0.0.0.0", async () => {
   console.log(`Streamer server running on https://${HOSTNAME}:${PORT}`);
 
   const browser = await puppeteer.launch({
-    ignoreHTTPSErrors: true,
+    browser:"firefox",
+    acceptInsecureCerts: true, //DO NOT CHANGE THIS
     headless: true,
     pipe: true,
     devtools: true,
@@ -127,8 +125,12 @@ server.listen(PORT, "0.0.0.0", async () => {
       "--use-vulkan",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
-      
+      `--disable-extensions-except=${pathToExtension}`,                                                                                                                                                                                                                                                                                                                              
+      `--load-extension=${pathToExtension}`, 
     ],
+    extraPrefsFirefox: {
+    "webgl.max-size-per-texture-mib": 20000, 
+  },
   });
 
   // open your Three.js streamer page

@@ -16,11 +16,11 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatA_greyscale.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatD_greyscale.nrrd");
 const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
 const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB per slab
-const totalBytes = nrrd.xLength * nrrd.yLength * nrrd.zLength; // Uint8 = 1 byte/voxel
+const totalBytes = nrrd.xLength * nrrd.yLength * nrrd.zLength;
 const numSlabs = Math.max(1, Math.ceil(totalBytes / MAX_SLAB_BYTES));
 if (numSlabs > MAX_SLABS) throw new Error(`Volume requires ${numSlabs} slabs but MAX_SLABS is ${MAX_SLABS}. Reduce MAX_SLAB_BYTES or increase MAX_SLABS in raymarch.js.`);
 const slabDepth = Math.ceil(nrrd.zLength / numSlabs);
@@ -73,7 +73,7 @@ const mesh = new THREE.Mesh(geometry, material);
 
 const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
 const maxDim = Math.max(sx, sy, sz);
-const worldMax = 10; // choose how big the volume should be in world units
+const worldMax = 3; // choose how big the volume should be in world units
 
 mesh.scale.set(
   (sx / maxDim) * worldMax,
@@ -120,6 +120,14 @@ player.add(camera);
 scene.add(player);
 const vrButton =  VRButton.createButton( renderer, {optionalFeatures: ["hand-tracking", "layers"]} );
 document.body.appendChild(vrButton);
+
+// Auto-enter VR as soon as the button is ready, without waiting for frontend signal
+const vrAutoClick = setInterval(() => {
+  if (vrButton.textContent === 'ENTER VR') {
+    vrButton.click();
+    clearInterval(vrAutoClick);
+  }
+}, 500);
 
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -312,15 +320,7 @@ scene.add(newplayer);
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
-    if (data.xr === true) {
-  if (vrButton) {
-    console.log("📢 Triggering VRButton click from WS event");
-    vrButton.click();
-    
-  } else {
-    console.warn("⚠️ VRButton not found in DOM");
-  }
-  }
+  
   
   if (data.type === "onehand") {
   mesh.position.add(new THREE.Vector3(
@@ -441,11 +441,13 @@ const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);
 const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget, renderWidth, renderHeight);
 const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget, renderWidth, renderHeight);
 
-// Add stream
-const streamLeft = streamRendererLeft.domElement.captureStream();
-streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
-const streamRight = streamRendererRight.domElement.captureStream();
-streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
+// Combined top-bottom stereo canvas: left eye on top, right eye on bottom
+const combinedCanvas = document.createElement('canvas');
+combinedCanvas.width = renderWidth;
+combinedCanvas.height = renderHeight * 2;
+const combinedCtx = combinedCanvas.getContext('2d');
+const combinedStream = combinedCanvas.captureStream();
+combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream));
 
 
 
@@ -475,9 +477,10 @@ renderer.setAnimationLoop(function () {
 
   equiLeft.update(newcamLeft, scene);
   equiRight.update(newcamRight, scene);
-  
-  
-  
+
+  combinedCtx.drawImage(streamRendererLeft.domElement,  0, 0, renderWidth, renderHeight);
+  combinedCtx.drawImage(streamRendererRight.domElement, 0, renderHeight,  renderWidth, renderHeight);
+
   renderer.render(scene,camera);
 
   stats.end();

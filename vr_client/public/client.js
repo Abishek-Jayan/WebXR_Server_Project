@@ -5,7 +5,8 @@ import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import Stats from './jsm/libs/stats.module.js';
 import HOSTNAME from "../../image_server/public/env.js";
-import print_network_log from "../../logging/network_logging.js";
+import { print_network_log, print_video_fps, start_receiver_stats } from "../../logging/network_logging.js";
+import { log, setSender } from "../../logging/logger.js";
 
 let hand1, hand2;
 let controller1, controller2;
@@ -133,13 +134,13 @@ function handleControllerMovement() {
       // Left controller → XY walking
       const lx = axes[2] || axes[0]; // left/right stick (varies by headset)
       const ly = axes[3] || axes[1]; // forward/back stick
-      ws.send(JSON.stringify({type:"left",lx:lx,ly:ly}));
+      ws.send(JSON.stringify({type:"left",lx:lx,ly:ly,_t:Date.now()}));
     }
 
       if (source.handedness === "right") {
       // Right controller → vertical
       const ry = axes[3] || axes[1] || 0;
-      ws.send(JSON.stringify({type:"right",ry:ry}));
+      ws.send(JSON.stringify({type:"right",ry:ry,_t:Date.now()}));
 
     }
     
@@ -275,11 +276,17 @@ let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
 
 
+
 const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     });
+const _receiverStats = start_receiver_stats(pc);
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
+setSender((line) => {
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: "log", msg: line }));
+});
 
 ws.onopen = () => {
   console.log("Connected to signaling server (headset)");
@@ -379,12 +386,50 @@ ws.onmessage = async (event) => {
       console.error("Error adding candidate:", err);
     }
   }
+
+  if (data.type === "render_ack") {
+    const _ackTs = data.t;
+    const _ackData = data;
+    video.requestVideoFrameCallback((_now, metadata) => {
+      const presentMs = metadata.presentationTime != null
+        ? metadata.presentationTime + performance.timeOrigin
+        : Date.now();
+      const totalMs = Math.round(presentMs - _ackTs);
+      const rttHalf = _receiverStats.getNetworkMs();
+      const inputTransitMs = rttHalf.toFixed(1);
+      const videoTransitMs = rttHalf.toFixed(1);
+      const frameWaitMs = (_ackData.frameWaitMs ?? 0).toFixed(1);
+      const jitterBufferMs = _receiverStats.getJitterBufferMs().toFixed(1);
+      const decodeMs = _receiverStats.getDecodeMs().toFixed(1);
+      const displayMs = (metadata.expectedDisplayTime && metadata.presentationTime)
+        ? (metadata.expectedDisplayTime - metadata.presentationTime).toFixed(1)
+        : 'N/A';
+      const captureNote = (metadata.captureTime && metadata.receiveTime)
+        ? ` [RTP encode+net=${(metadata.receiveTime - metadata.captureTime).toFixed(1)}ms]`
+        : '';
+      log(
+        `[LATENCY BREAKDOWN]\n` +
+        `  input → server     : ${inputTransitMs} ms (≈RTT/2)\n` +
+        `  frame sched. wait  : ${frameWaitMs} ms\n` +
+        `  raymarch rendering : ${_ackData.raymarchMs?.toFixed(1) ?? 'N/A'} ms\n` +
+        `  cubemap → ERP      : ${_ackData.erpMs?.toFixed(1) ?? 'N/A'} ms\n` +
+        `  WebRTC encode      : ${_ackData.encodeMs?.toFixed(1) ?? 'N/A'} ms${captureNote}\n` +
+        `  video → headset    : ${videoTransitMs} ms (≈RTT/2)\n` +
+        `  jitter buffer      : ${jitterBufferMs} ms\n` +
+        `  decode on headset  : ${decodeMs} ms\n` +
+        `  display vsync      : ${displayMs} ms\n` +
+        `  ─────────────────────────\n` +
+        `  input → photon     : ${totalMs} ms`
+      );
+    });
+  }
 };
 
 pc.ontrack = (event) => {
   console.log("ontrack fired:", event.track, "streams:", event.streams);
   video.srcObject = event.streams[0];
   video.play();
+  print_video_fps(video);
 };
 
 // Send ICE candidates

@@ -71,14 +71,14 @@ const material = new THREE.ShaderMaterial({
             float tEnd = bounds.y;
 
             float accum = 0.0;
-            const int STEPS = 64;
+            const int STEPS = 128;
             float dt = (tEnd - t) / float(STEPS);
 
             for (int i = 0; i < STEPS; i++) {
                 vec3 pos = vOrigin + rayDir * (t + float(i) * dt);
                 vec3 texPos = pos + 0.5;
                 float val = sampleVolume(texPos);
-                accum += val * 0.02;
+                accum += val * 0.010;
             }
 
             gl_FragColor = vec4(accum, accum, accum, 1.0);

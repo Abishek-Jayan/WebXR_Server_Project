@@ -16,7 +16,7 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/GB_FILES_8_BIT/brightness_increased_RatD_greyscale.nrrd");
+const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/true_datasets/1_V2_ventral_nerve_cord.nrrd");
 const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
 const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB per slab
@@ -239,6 +239,14 @@ window.addEventListener(
 			
 
 
+let _pendingInputTs = null;
+let _inputReceivedAt = null;
+let _backendFrameCount = 0;
+let _backendLastFpsTime = performance.now();
+let _lastRaymarchMs = 0;
+let _lastErpMs = 0;
+let _avgEncodeMs = 0;
+
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
@@ -251,44 +259,43 @@ ws.onopen = async () => {
   ws.send(JSON.stringify({ role: "streamer" }));
 
 
-  function preferH264(sdp) {
+  function preferVP9(sdp) {
     const lines = sdp.split("\r\n");
     const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
     if (mLineIndex < 0) return sdp;
-    
-    const h264Payload = lines
-        .filter(l => l.includes("H264/90000"))
-        .map(l => l.match(/:(\d+) H264\/90000/)[1])[0];
 
-    if (!h264Payload) return sdp;
+    const vp9Payload = lines
+        .filter(l => l.includes("VP9/90000"))
+        .map(l => l.match(/:(\d+) VP9\/90000/)[1])[0];
+
+    if (!vp9Payload) return sdp;
 
     const parts = lines[mLineIndex].split(" ");
-    lines[mLineIndex] = [...parts.slice(0, 3), h264Payload, ...parts.slice(3).filter(p => p !== h264Payload)].join(" ");
+    lines[mLineIndex] = [...parts.slice(0, 3), vp9Payload, ...parts.slice(3).filter(p => p !== vp9Payload)].join(" ");
     return lines.join("\r\n");
   }
-  
+
   // Create offer to headset
   const offer = await pc.createOffer();
-  offer.sdp = preferH264(offer.sdp);
+  offer.sdp = preferVP9(offer.sdp);
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
     if (!sender.track || sender.track.kind !== 'video') return;
     const p = sender.getParameters();
     if (!p.encodings) p.encodings = [{}];
     Object.assign(p.encodings[0], {
-    maxBitrate: 25_000_000,     // start ~10 Mbps per stream; tune up/down
-    maxFramerate: 90,           // match capture target
-    priority: "high",
-    networkPriority: "high",
-    scaleResolutionDownBy: 1.0  // raise (e.g., 1.25–2) if encoder is the bottleneck
-
+      maxBitrate: 100_000_000,    // 100 Mbps — LAN has headroom, drives encoder toward higher quality
+      maxFramerate: 90,
+      priority: "high",
+      networkPriority: "high",
+      scaleResolutionDownBy: 1.0
     });
     p.degradationPreference = 'maintain-resolution';
     sender.setParameters(p).catch(()=>{});
     const effective = sender.getParameters();
     console.log('encodings after setParameters', effective.encodings);
-    // Content hint on the track itself:
-    try { sender.track.contentHint = 'motion'; } catch {}
+    // 'detail' preserves fine structure; correct for slow-moving volumetric renders
+    try { sender.track.contentHint = 'detail'; } catch {}
   });
   ws.send(
     JSON.stringify({
@@ -361,10 +368,12 @@ ws.onmessage = async (event) => {
 
   if (data.type === "left")
   {
+    if (data._t !== undefined) { _pendingInputTs = data._t; _inputReceivedAt = performance.now(); }
     handleControllerMovement("left",data.lx,data.ly,0);
   }
   if(data.type === "right")
   {
+    if (data._t !== undefined) { _pendingInputTs = data._t; _inputReceivedAt = performance.now(); }
     handleControllerMovement("right",0,0,data.ry);
   }
  if(data.type === "pose") {
@@ -406,47 +415,25 @@ pc.onicecandidate = (event) => {
     );
   }
 };
-const streamRendererLeft = new THREE.WebGLRenderer({  alpha: false,
+const streamRenderer = new THREE.WebGLRenderer({
+  alpha: false,
   depth: false,
   stencil: false,
   antialias: false,
   premultipliedAlpha: false,
   preserveDrawingBuffer: false,
-
 });
-const streamRendererRight = new THREE.WebGLRenderer( { alpha: false,
-  depth: false,
-  stencil: false,
-  antialias: false,
-  premultipliedAlpha: false,
-  preserveDrawingBuffer: false,
-
-});
-streamRendererLeft.setSize(renderWidth,renderHeight);
-
-streamRendererLeft.xr.enabled = true;
-
-streamRendererRight.setSize(renderWidth,renderHeight);
-
-
-streamRendererRight.xr.enabled = true;
+streamRenderer.setSize(renderWidth, renderHeight * 2);
 
 const cubeMapSize = renderWidth;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
 const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);
 
+const equiLeft  = new CubemapToEquirectangular(streamRenderer, cubeCamera, renderTarget, renderWidth, renderHeight);
+const equiRight = new CubemapToEquirectangular(streamRenderer, cubeCamera, renderTarget, renderWidth, renderHeight);
 
-
-const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget, renderWidth, renderHeight);
-const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget, renderWidth, renderHeight);
-
-// Combined top-bottom stereo canvas: left eye on top, right eye on bottom
-const combinedCanvas = document.createElement('canvas');
-combinedCanvas.width = renderWidth;
-combinedCanvas.height = renderHeight * 2;
-const combinedCtx = combinedCanvas.getContext('2d');
-const combinedStream = combinedCanvas.captureStream();
+const combinedStream = streamRenderer.domElement.captureStream();
 combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream));
 
 
@@ -457,7 +444,23 @@ combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream)
 
 
 
+// Poll outbound-rtp for average encode time per frame
+const _encodePrev = {};
+setInterval(async () => {
+  if (pc.connectionState !== 'connected') return;
+  const stats = await pc.getStats();
+  stats.forEach(report => {
+    if (report.type !== 'outbound-rtp' || report.kind !== 'video') return;
+    const p = _encodePrev[report.ssrc] || {};
+    const dtEncode = (report.totalEncodeTime || 0) - (p.totalEncodeTime || 0);
+    const dtFrames = (report.framesEncoded || 0) - (p.framesEncoded || 0);
+    if (dtFrames > 0) _avgEncodeMs = (dtEncode / dtFrames) * 1000;
+    _encodePrev[report.ssrc] = { totalEncodeTime: report.totalEncodeTime, framesEncoded: report.framesEncoded };
+  });
+}, 2000);
+
 renderer.setAnimationLoop(function () {
+  const _frameStartMs = performance.now();
   stats.begin();
   const xrCam = renderer.xr.getCamera(camera);
   if (!xrCam.cameras || xrCam.cameras.length < 2) {
@@ -475,13 +478,35 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
+  // Left eye → top half of canvas
+  streamRenderer.setScissor(0, renderHeight, renderWidth, renderHeight);
+  streamRenderer.setViewport(0, renderHeight, renderWidth, renderHeight);
   equiLeft.update(newcamLeft, scene);
+
+  // Right eye → bottom half
+  streamRenderer.setScissor(0, 0, renderWidth, renderHeight);
+  streamRenderer.setViewport(0, 0, renderWidth, renderHeight);
   equiRight.update(newcamRight, scene);
 
-  combinedCtx.drawImage(streamRendererLeft.domElement,  0, 0, renderWidth, renderHeight);
-  combinedCtx.drawImage(streamRendererRight.domElement, 0, renderHeight,  renderWidth, renderHeight);
+  _lastRaymarchMs = (equiLeft.lastRaymarchMs || 0) + (equiRight.lastRaymarchMs || 0);
+  _lastErpMs = (equiLeft.lastErpMs || 0) + (equiRight.lastErpMs || 0);
 
-  renderer.render(scene,camera);
+
+  _backendFrameCount++;
+  const _now = performance.now();
+  if (_now - _backendLastFpsTime >= 2000) {
+    const fps = (_backendFrameCount / (_now - _backendLastFpsTime) * 1000).toFixed(1);
+    console.log(`[BACKEND-FPS] ${fps} fps`);
+    _backendFrameCount = 0;
+    _backendLastFpsTime = _now;
+  }
+
+  if (_pendingInputTs !== null && ws.readyState === WebSocket.OPEN) {
+    const frameWaitMs = _inputReceivedAt !== null ? _frameStartMs - _inputReceivedAt : 0;
+    ws.send(JSON.stringify({ type: "render_ack", t: _pendingInputTs, raymarchMs: _lastRaymarchMs, erpMs: _lastErpMs, encodeMs: _avgEncodeMs, frameWaitMs }));
+    _pendingInputTs = null;
+    _inputReceivedAt = null;
+  }
 
   stats.end();
 

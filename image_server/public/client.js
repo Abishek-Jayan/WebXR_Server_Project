@@ -16,48 +16,197 @@ const renderHeight = 1080; // desired output height
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./static/paper_datasets/true_datasets/1_V2_ventral_nerve_cord.nrrd");
-const src = nrrd.data; // Make sure its Uint8Array else it wont load. Preprocess with ImageJ.
 
-const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024; // 1.5 GB per slab
-const totalBytes = nrrd.xLength * nrrd.yLength * nrrd.zLength;
-const numSlabs = Math.max(1, Math.ceil(totalBytes / MAX_SLAB_BYTES));
-if (numSlabs > MAX_SLABS) throw new Error(`Volume requires ${numSlabs} slabs but MAX_SLABS is ${MAX_SLABS}. Reduce MAX_SLAB_BYTES or increase MAX_SLABS in raymarch.js.`);
-const slabDepth = Math.ceil(nrrd.zLength / numSlabs);
+const NRRD_URL = "./static/paper_datasets/true_datasets/1_V2_ventral_nerve_cord.nrrd";
 
-console.log(`Volume: ${nrrd.xLength}x${nrrd.yLength}x${nrrd.zLength}, ${(totalBytes / 1e9).toFixed(2)} GB → ${numSlabs} slab(s)`);
 
-const slabTextures = [];
-const slabStarts = new Array(MAX_SLABS).fill(0);
-const slabEnds = new Array(MAX_SLABS).fill(0);
+// Complex CODE
 
-for (let s = 0; s < numSlabs; s++) {
-    const zStart = s * slabDepth;
-    const zEnd = Math.min(zStart + slabDepth, nrrd.zLength);
-    const depth = zEnd - zStart;
+const CHUNK_SIZE = 256 * 1024 * 1024; // 256 MB per compressed chunk
+const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024;
 
-    const chunk = new Uint8Array(nrrd.xLength * nrrd.yLength * depth);
-    chunk.set(src.subarray(zStart * nrrd.xLength * nrrd.yLength, zEnd * nrrd.xLength * nrrd.yLength));
+// Parse NRRD header from first 8 KB
+// async function fetchNRRDHeader(url) {
+//     const resp = await fetch(url, { headers: { Range: 'bytes=0-8191' } });
+//     const text = new TextDecoder().decode(await resp.arrayBuffer());
+//     const sep = text.indexOf('\n\n');
+//     const fields = {};
+//     for (const line of text.substring(0, sep).split('\n')) {
+//         const ci = line.indexOf(':');
+//         if (ci < 0) continue;
+//         fields[line.substring(0, ci).trim()] = line.substring(ci + 1).trim();
+//     }
+//     const [xLength, yLength, zLength] = fields['sizes'].split(/\s+/).map(Number);
+//     const encoding = (fields['encoding'] || 'raw').trim();
+//     const type = (fields['type'] || 'uint8').trim();
+//     const endian = (fields['endian'] || 'little').trim();
+//     const dataOffset = sep + 2;
 
-    const tex = new THREE.Data3DTexture(chunk, nrrd.xLength, nrrd.yLength, depth);
-    tex.format = THREE.RedFormat;
-    tex.type = THREE.UnsignedByteType;
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.unpackAlignment = 1;
-    tex.needsUpdate = true;
+//     let bytesPerVoxel = 1;
+//     if (['uint16', 'int16', 'short', 'ushort'].includes(type)) bytesPerVoxel = 2;
+//     else if (['float', 'uint32', 'int32', 'int'].includes(type)) bytesPerVoxel = 4;
 
-    slabTextures.push(tex);
-    slabStarts[s] = zStart / nrrd.zLength;
-    slabEnds[s]   = zEnd   / nrrd.zLength;
-}
+//     console.log(`NRRD: ${xLength}x${yLength}x${zLength}, encoding=${encoding}, type=${type}, endian=${endian}`);
+//     return { xLength, yLength, zLength, encoding, dataOffset, bytesPerVoxel, endian };
+// }
 
-console.log("rayMarchMaterial =", rayMarchMaterial);
-console.log("uniforms =", rayMarchMaterial?.uniforms);
-rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;
-rayMarchMaterial.uniforms.slabStarts.value = slabStarts;
-rayMarchMaterial.uniforms.slabEnds.value = slabEnds;
-rayMarchMaterial.uniforms.numSlabs.value = numSlabs;
+// // Stream compressed chunks one-by-one into DecompressionStream, read out slab-sized pieces.
+// // Peak memory: ~256 MB (one compressed chunk) + ~1.5 GB (one slab accumulator).
+// async function loadSlabsStreaming(url, dataOffset, totalFileSize, xLength, yLength, zLength, numSlabs, slabDepth) {
+//     // Build byte ranges for the compressed data (skip header)
+//     const ranges = [];
+//     for (let start = dataOffset; start < totalFileSize; start += CHUNK_SIZE)
+//         ranges.push({ start, end: Math.min(start + CHUNK_SIZE - 1, totalFileSize - 1) });
+
+//     console.log(`Loading ${(totalFileSize / 1e6).toFixed(0)} MB compressed in ${ranges.length} chunk(s)`);
+
+//     // Fetch chunks one at a time and feed into decompressor
+//     let rangeIdx = 0;
+//     const compressedStream = new ReadableStream({
+//         async pull(controller) {
+//             if (rangeIdx >= ranges.length) { controller.close(); return; }
+//             const { start, end } = ranges[rangeIdx++];
+//             const resp = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+//             controller.enqueue(new Uint8Array(await resp.arrayBuffer()));
+//             console.log(`Compressed chunk ${rangeIdx}/${ranges.length} fetched`);
+//         }
+//     });
+
+//     const reader = compressedStream.pipeThrough(new DecompressionStream('gzip')).getReader();
+
+//     // Accumulator: never grows larger than one slab + one decompressor output chunk
+//     let pending = new Uint8Array(0);
+//     async function readExact(n) {
+//         while (pending.length < n) {
+//             const { value, done } = await reader.read();
+//             if (done) throw new Error('Decompression stream ended before all slabs were read');
+//             const merged = new Uint8Array(pending.length + value.length);
+//             merged.set(pending);
+//             merged.set(value, pending.length);
+//             pending = merged;
+//         }
+//         const out = pending.slice(0, n);
+//         pending = pending.slice(n);
+//         return out;
+//     }
+
+//     const sliceBytes = xLength * yLength;
+//     const results = [];
+//     for (let s = 0; s < numSlabs; s++) {
+//         const zStart = s * slabDepth;
+//         const zEnd   = Math.min(zStart + slabDepth, zLength);
+//         const chunk  = await readExact(sliceBytes * (zEnd - zStart));
+//         results.push({ chunk, zStart, zEnd });
+//         console.log(`Slab ${s + 1}/${numSlabs} decompressed`);
+//     }
+//     return results;
+// }
+
+// // Raw path: parallel Range requests, no decompression needed
+// async function loadSlabsRaw(url, dataOffset, xLength, yLength, zLength, numSlabs, slabDepth, bytesPerVoxel, endian) {
+//     const sliceBytes = xLength * yLength * bytesPerVoxel;
+//     return Promise.all(Array.from({ length: numSlabs }, async (_, s) => {
+//         const zStart    = s * slabDepth;
+//         const zEnd      = Math.min(zStart + slabDepth, zLength);
+//         const byteStart = dataOffset + zStart * sliceBytes;
+//         const byteEnd   = dataOffset + zEnd   * sliceBytes - 1;
+//         const resp  = await fetch(url, { headers: { Range: `bytes=${byteStart}-${byteEnd}` } });
+//         let raw = new Uint8Array(await resp.arrayBuffer());
+
+//         if (bytesPerVoxel === 2) {
+//             // Swap bytes to little-endian if needed
+//             if (endian === 'big') {
+//                 for (let i = 0; i < raw.length - 1; i += 2) {
+//                     const tmp = raw[i]; raw[i] = raw[i + 1]; raw[i + 1] = tmp;
+//                 }
+//             }
+//             // Normalize uint16 → uint8: stretch to actual data range (P99 ~7000)
+//             // >>8 maps max→255 but mean→~6 (invisible); >>5 maps mean→~49, P99→~220
+//             const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+//             const u8  = new Uint8Array(u16.length);
+//             for (let i = 0; i < u16.length; i++) u8[i] = Math.min(255, u16[i] >> 5);
+//             raw = u8;
+//         }
+
+//         console.log(`Slab ${s + 1}/${numSlabs} fetched`);
+//         return { chunk: raw, zStart, zEnd };
+//     }));
+// }
+
+// const { xLength, yLength, zLength, encoding, dataOffset, bytesPerVoxel, endian } = await fetchNRRDHeader(NRRD_URL);
+
+// // Use raw byte size for slab splitting so each fetch stays within MAX_SLAB_BYTES
+// const rawTotalBytes = xLength * yLength * zLength * bytesPerVoxel;
+// const numSlabs      = Math.max(1, Math.ceil(rawTotalBytes / MAX_SLAB_BYTES));
+// if (numSlabs > MAX_SLABS) throw new Error(`Volume requires ${numSlabs} slabs but MAX_SLABS is ${MAX_SLABS}. Reduce MAX_SLAB_BYTES or increase MAX_SLABS in raymarch.js.`);
+// const slabDepth = Math.ceil(zLength / numSlabs);
+
+// const totalBytes = xLength * yLength * zLength;
+// console.log(`Volume: ${xLength}x${yLength}x${zLength}, ${(totalBytes / 1e9).toFixed(2)} GB → ${numSlabs} slab(s)`);
+
+// let rawSlabs;
+// if (encoding === 'gzip' || encoding === 'gz') {
+//     const head = await fetch(NRRD_URL, { method: 'HEAD' });
+//     const totalFileSize = parseInt(head.headers.get('Content-Length'), 10);
+//     rawSlabs = await loadSlabsStreaming(NRRD_URL, dataOffset, totalFileSize, xLength, yLength, zLength, numSlabs, slabDepth);
+// } else {
+//     rawSlabs = await loadSlabsRaw(NRRD_URL, dataOffset, xLength, yLength, zLength, numSlabs, slabDepth, bytesPerVoxel, endian);
+// }
+
+// const slabTextures = [];
+// const slabStarts = new Array(MAX_SLABS).fill(0);
+// const slabEnds   = new Array(MAX_SLABS).fill(0);
+
+// for (let s = 0; s < rawSlabs.length; s++) {
+//     const { chunk, zStart, zEnd } = rawSlabs[s];
+//     const depth = zEnd - zStart;
+//     const tex = new THREE.Data3DTexture(chunk, xLength, yLength, depth);
+//     tex.format = THREE.RedFormat;
+//     tex.type = THREE.UnsignedByteType;
+//     tex.minFilter = THREE.LinearFilter;
+//     tex.magFilter = THREE.LinearFilter;
+//     tex.unpackAlignment = 1;
+//     tex.needsUpdate = true;
+//     slabTextures.push(tex);
+//     slabStarts[s] = zStart / zLength;
+//     slabEnds[s]   = zEnd   / zLength;
+// }
+// console.log("rayMarchMaterial =", rayMarchMaterial);
+// console.log("uniforms =", rayMarchMaterial?.uniforms);
+// rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;
+// rayMarchMaterial.uniforms.slabStarts.value = slabStarts;
+// rayMarchMaterial.uniforms.slabEnds.value = slabEnds;
+// rayMarchMaterial.uniforms.numSlabs.value = numSlabs;
+// const sx = xLength, sy = yLength, sz = zLength;
+
+
+// //Trad code
+const nrrd = await new NRRDLoader().loadAsync(NRRD_URL);
+console.log(`NRRD data type: ${nrrd.data.constructor.name}`);
+const nrrdData = (nrrd.data instanceof Uint8Array || nrrd.data instanceof Uint8ClampedArray)
+    ? nrrd.data
+    : new Uint8Array(nrrd.data.buffer, nrrd.data.byteOffset, nrrd.data.byteLength);
+// Build 3D texture
+const texture3D = new THREE.Data3DTexture(
+  nrrdData,
+  nrrd.xLength,
+  nrrd.yLength,
+  nrrd.zLength
+);
+texture3D.format = THREE.RedFormat;
+texture3D.type = THREE.UnsignedByteType;   // For 8-bit NRRD
+texture3D.minFilter = THREE.LinearFilter;
+texture3D.magFilter = THREE.LinearFilter;
+texture3D.unpackAlignment = 1;
+texture3D.needsUpdate = true;
+const slabTextures = new Array(MAX_SLABS).fill(null);                                                                                                                                                                                                                                                                                                                                     
+slabTextures[0] = texture3D;                                                                                                                                                                                                                                                                                                                                                            
+rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;                                                                                                                                                                                                                                                                                                                            
+rayMarchMaterial.uniforms.slabStarts.value = [0, ...new Array(MAX_SLABS - 1).fill(0)];                                                                                                                                                                                                                                                                                                    
+rayMarchMaterial.uniforms.slabEnds.value   = [1, ...new Array(MAX_SLABS - 1).fill(0)];                                                                                                                                                                                                                                                                                                    
+rayMarchMaterial.uniforms.numSlabs.value   = 1;          
+const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
+
 
 const geometry = new THREE.BoxGeometry(1, 1, 1);  // size in world units
 const material = new THREE.ShaderMaterial({
@@ -71,7 +220,6 @@ const material = new THREE.ShaderMaterial({
 // Volume mesh (the box the shader raymarches inside)
 const mesh = new THREE.Mesh(geometry, material);
 
-const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
 const maxDim = Math.max(sx, sy, sz);
 const worldMax = 3; // choose how big the volume should be in world units
 
@@ -444,8 +592,9 @@ combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream)
 
 
 
-// Poll outbound-rtp for average encode time per frame
+// Poll outbound-rtp for average encode time per frame and bandwidth
 const _encodePrev = {};
+const _BW_INTERVAL_MS = 2000;
 setInterval(async () => {
   if (pc.connectionState !== 'connected') return;
   const stats = await pc.getStats();
@@ -455,9 +604,14 @@ setInterval(async () => {
     const dtEncode = (report.totalEncodeTime || 0) - (p.totalEncodeTime || 0);
     const dtFrames = (report.framesEncoded || 0) - (p.framesEncoded || 0);
     if (dtFrames > 0) _avgEncodeMs = (dtEncode / dtFrames) * 1000;
-    _encodePrev[report.ssrc] = { totalEncodeTime: report.totalEncodeTime, framesEncoded: report.framesEncoded };
+
+    const dtBytes = (report.bytesSent || 0) - (p.bytesSent || 0);
+    const mbps = (dtBytes * 8) / (_BW_INTERVAL_MS / 1000) / 1e6;
+    console.log(`[BANDWIDTH] ${mbps.toFixed(2)} Mbps (${(dtBytes / 1024).toFixed(0)} KB in ${_BW_INTERVAL_MS}ms)`);
+
+    _encodePrev[report.ssrc] = { totalEncodeTime: report.totalEncodeTime, framesEncoded: report.framesEncoded, bytesSent: report.bytesSent };
   });
-}, 2000);
+}, _BW_INTERVAL_MS);
 
 renderer.setAnimationLoop(function () {
   const _frameStartMs = performance.now();
@@ -507,7 +661,7 @@ renderer.setAnimationLoop(function () {
     _pendingInputTs = null;
     _inputReceivedAt = null;
   }
-
+  renderer.render(scene,camera);
   stats.end();
 
   

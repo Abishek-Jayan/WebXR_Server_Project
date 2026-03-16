@@ -55,6 +55,11 @@ https://<server-ip>:3000
 ```
 Note: because the certificate is self-signed, your browser/device may require a one-time “Proceed / Advanced” trust step.
 
+
+## Comparison Studies Notes
+- For testing traditional WebXR, rename comparison_studies/traditional_webxr.js to client.js and set up a NodeJS server to host it.
+
+
 ## Limitations / Notes
 
 - Designed and tested primarily under local/controlled Wi-Fi.

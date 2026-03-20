@@ -1,6 +1,7 @@
 import * as THREE from "three";
+import { MAX_SLABS, RAYMARCH_STEPS, RAYMARCH_THRESHOLD, RAYMARCH_DENSITY, RAYMARCH_GAMMA } from "./env.js";
 
-export const MAX_SLABS = 8;
+export { MAX_SLABS };
 
 const material = new THREE.ShaderMaterial({
 
@@ -70,15 +71,38 @@ const material = new THREE.ShaderMaterial({
             float t = max(bounds.x, 0.0);
             float tEnd = bounds.y;
 
-            float accum = 0.0;
-            const int STEPS = 128;
+            const int STEPS = ${RAYMARCH_STEPS};
             float dt = (tEnd - t) / float(STEPS);
+
+            // Threshold: discard voxels below this to cut background fog
+            const float THRESHOLD = ${RAYMARCH_THRESHOLD.toFixed(6)};
+            // Density scale: high value needed so thin fibers (~7 voxels wide)
+            // accumulate enough opacity to be visible
+            const float DENSITY = ${RAYMARCH_DENSITY.toFixed(6)};
+
+            float accum = 0.0;
+            float alpha = 0.0;
 
             for (int i = 0; i < STEPS; i++) {
                 vec3 pos = vOrigin + rayDir * (t + float(i) * dt);
                 vec3 texPos = pos + 0.5;
                 float val = sampleVolume(texPos);
-                accum += val * 0.010;
+
+                if (val > THRESHOLD) {
+                    // Remap value above threshold to [0, 1]
+                    float mapped = (val - THRESHOLD) / (1.0 - THRESHOLD);
+                    // Gamma to boost mid-range structures
+                    mapped = pow(mapped, ${RAYMARCH_GAMMA.toFixed(6)});
+
+                    float opacity = mapped * dt * DENSITY;
+                    opacity = clamp(opacity, 0.0, 1.0);
+
+                    // Front-to-back alpha compositing
+                    accum += (1.0 - alpha) * mapped * opacity;
+                    alpha += (1.0 - alpha) * opacity;
+                }
+
+                if (alpha >= 0.99) break;
             }
 
             gl_FragColor = vec4(accum, accum, accum, 1.0);

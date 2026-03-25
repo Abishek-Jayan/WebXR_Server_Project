@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import Stats from './jsm/libs/stats.module.js';
-import HOSTNAME from "../../image_server/public/env.js";
+import { HOSTNAME } from "../../image_server/public/env.js";
 import { print_network_log, print_video_fps, start_receiver_stats } from "../../logging/network_logging.js";
 import { log, setSender } from "../../logging/logger.js";
 

@@ -390,7 +390,9 @@ let _avgEncodeMs = 0;
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
-
+pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
+pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
+pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
 
@@ -399,25 +401,10 @@ ws.onopen = async () => {
   ws.send(JSON.stringify({ role: "streamer" }));
 
 
-  function preferVP9(sdp) {
-    const lines = sdp.split("\r\n");
-    const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
-    if (mLineIndex < 0) return sdp;
 
-    const vp9Payload = lines
-        .filter(l => l.includes("VP9/90000"))
-        .map(l => l.match(/:(\d+) VP9\/90000/)[1])[0];
-
-    if (!vp9Payload) return sdp;
-
-    const parts = lines[mLineIndex].split(" ");
-    lines[mLineIndex] = [...parts.slice(0, 3), vp9Payload, ...parts.slice(3).filter(p => p !== vp9Payload)].join(" ");
-    return lines.join("\r\n");
-  }
 
   // Create offer to headset
   const offer = await pc.createOffer();
-  offer.sdp = preferVP9(offer.sdp);
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
     if (!sender.track || sender.track.kind !== 'video') return;

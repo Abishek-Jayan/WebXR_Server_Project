@@ -4,50 +4,203 @@ import { VRButton} from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
-import rayMarchMaterial from "./raymarch.js";
+import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
-import HOSTNAME from "./env.js";
-
-
-const renderWidth = 1920; // desired output width
-const renderHeight = 1080; // desired output height
-
+import { HOSTNAME, NRRD_URL, USE_LARGE_FILE_LOADER, RENDER_WIDTH, RENDER_HEIGHT, WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE } from "./env.js";
 
 const scene = new THREE.Scene();
 const stats = new Stats();
 document.body.appendChild(stats.dom);
-const nrrd = await new NRRDLoader().loadAsync("./mesh_voxelized(0.05).nrrd");
-console.log(nrrd);
-// Build 3D texture
-const texture3D = new THREE.Data3DTexture(
-  nrrd.data,
-  nrrd.xLength,
-  nrrd.yLength,
-  nrrd.zLength
-);
 
-const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
 
-function threeTypeForTypedArray(arr) {
-  if (arr instanceof Uint8Array) return THREE.UnsignedByteType;
-  if (arr instanceof Int8Array) return THREE.ByteType;
-  if (arr instanceof Uint16Array) return THREE.UnsignedShortType;
-  if (arr instanceof Int16Array) return THREE.ShortType;
-  if (arr instanceof Uint32Array) return THREE.UnsignedIntType;
-  if (arr instanceof Int32Array) return THREE.IntType;
-  if (arr instanceof Float32Array) return THREE.FloatType;
-  throw new Error("Unsupported NRRD data array type: " + arr.constructor.name);
+
+
+
+
+async function loadTrad() {
+    const nrrd = await new NRRDLoader().loadAsync(NRRD_URL);
+    console.log(`NRRD data type: ${nrrd.data.constructor.name}`);
+    const nrrdData = (nrrd.data instanceof Uint8Array || nrrd.data instanceof Uint8ClampedArray)
+        ? nrrd.data
+        : new Uint8Array(nrrd.data.buffer, nrrd.data.byteOffset, nrrd.data.byteLength);
+    const expectedVoxels = nrrd.xLength * nrrd.yLength * nrrd.zLength;
+    console.log(`Expected: ${expectedVoxels}, Actual: ${nrrdData.length}, Ratio: ${nrrdData.length / expectedVoxels}`);
+    console.log(`Voxel dimensions: ${nrrd.xLength} x ${nrrd.yLength} x ${nrrd.zLength}`);
+    console.log(`Voxel spacing: ${JSON.stringify(nrrd.spaceDirections || nrrd.pixelDimensions || 'not available')}`);
+
+    const texture3D = new THREE.Data3DTexture(nrrdData, nrrd.xLength, nrrd.yLength, nrrd.zLength);
+    texture3D.format = THREE.RedFormat;
+    texture3D.type = THREE.UnsignedByteType;
+    texture3D.minFilter = THREE.LinearFilter;
+    texture3D.magFilter = THREE.LinearFilter;
+    texture3D.unpackAlignment = 1;
+    texture3D.needsUpdate = true;
+
+    const slabTextures = new Array(MAX_SLABS).fill(null);
+    slabTextures[0] = texture3D;
+    rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;
+    rayMarchMaterial.uniforms.slabStarts.value = [0, ...new Array(MAX_SLABS - 1).fill(0)];
+    rayMarchMaterial.uniforms.slabEnds.value   = [1, ...new Array(MAX_SLABS - 1).fill(0)];
+    rayMarchMaterial.uniforms.numSlabs.value   = 1;
+
+    return { sx: nrrd.xLength, sy: nrrd.yLength, sz: nrrd.zLength };
 }
 
-texture3D.format = THREE.RedFormat;
-texture3D.type = threeTypeForTypedArray(nrrd.data);   // For 8-bit NRRD
-texture3D.minFilter = THREE.LinearFilter;
-texture3D.magFilter = THREE.LinearFilter;
-texture3D.unpackAlignment = 1;
-texture3D.needsUpdate = true;
+async function loadLargeFiles() {
+    const CHUNK_SIZE = 256 * 1024 * 1024; // 256 MB per compressed chunk
+    const MAX_SLAB_BYTES = 1.5 * 1024 * 1024 * 1024;
 
-rayMarchMaterial.uniforms.volumeTex.value = texture3D;
-rayMarchMaterial.uniforms.dims.value.set(nrrd.xLength, nrrd.yLength, nrrd.zLength);
+    async function fetchNRRDHeader(url) {
+        const resp = await fetch(url, { headers: { Range: 'bytes=0-8191' } });
+        const text = new TextDecoder().decode(await resp.arrayBuffer());
+        const sep = text.indexOf('\n\n');
+        const fields = {};
+        for (const line of text.substring(0, sep).split('\n')) {
+            const ci = line.indexOf(':');
+            if (ci < 0) continue;
+            fields[line.substring(0, ci).trim()] = line.substring(ci + 1).trim();
+        }
+        const [xLength, yLength, zLength] = fields['sizes'].split(/\s+/).map(Number);
+        const encoding = (fields['encoding'] || 'raw').trim();
+        const type = (fields['type'] || 'uint8').trim();
+        const endian = (fields['endian'] || 'little').trim();
+        const dataOffset = sep + 2;
+
+        let bytesPerVoxel = 1;
+        if (['uint16', 'int16', 'short', 'ushort'].includes(type)) bytesPerVoxel = 2;
+        else if (['float', 'uint32', 'int32', 'int'].includes(type)) bytesPerVoxel = 4;
+
+        console.log(`NRRD: ${xLength}x${yLength}x${zLength}, encoding=${encoding}, type=${type}, endian=${endian}`);
+        return { xLength, yLength, zLength, encoding, dataOffset, bytesPerVoxel, endian };
+    }
+
+    // Stream compressed chunks one-by-one into DecompressionStream, read out slab-sized pieces.
+    // Peak memory: ~256 MB (one compressed chunk) + ~1.5 GB (one slab accumulator).
+    async function loadSlabsStreaming(url, dataOffset, totalFileSize, xLength, yLength, zLength, numSlabs, slabDepth) {
+        const ranges = [];
+        for (let start = dataOffset; start < totalFileSize; start += CHUNK_SIZE)
+            ranges.push({ start, end: Math.min(start + CHUNK_SIZE - 1, totalFileSize - 1) });
+
+        console.log(`Loading ${(totalFileSize / 1e6).toFixed(0)} MB compressed in ${ranges.length} chunk(s)`);
+
+        let rangeIdx = 0;
+        const compressedStream = new ReadableStream({
+            async pull(controller) {
+                if (rangeIdx >= ranges.length) { controller.close(); return; }
+                const { start, end } = ranges[rangeIdx++];
+                const resp = await fetch(url, { headers: { Range: `bytes=${start}-${end}` } });
+                controller.enqueue(new Uint8Array(await resp.arrayBuffer()));
+                console.log(`Compressed chunk ${rangeIdx}/${ranges.length} fetched`);
+            }
+        });
+
+        const reader = compressedStream.pipeThrough(new DecompressionStream('gzip')).getReader();
+
+        let pending = new Uint8Array(0);
+        async function readExact(n) {
+            while (pending.length < n) {
+                const { value, done } = await reader.read();
+                if (done) throw new Error('Decompression stream ended before all slabs were read');
+                const merged = new Uint8Array(pending.length + value.length);
+                merged.set(pending);
+                merged.set(value, pending.length);
+                pending = merged;
+            }
+            const out = pending.slice(0, n);
+            pending = pending.slice(n);
+            return out;
+        }
+
+        const sliceBytes = xLength * yLength;
+        const results = [];
+        for (let s = 0; s < numSlabs; s++) {
+            const zStart = s * slabDepth;
+            const zEnd   = Math.min(zStart + slabDepth, zLength);
+            const chunk  = await readExact(sliceBytes * (zEnd - zStart));
+            results.push({ chunk, zStart, zEnd });
+            console.log(`Slab ${s + 1}/${numSlabs} decompressed`);
+        }
+        return results;
+    }
+
+    // Raw path: parallel Range requests, no decompression needed
+    async function loadSlabsRaw(url, dataOffset, xLength, yLength, zLength, numSlabs, slabDepth, bytesPerVoxel, endian) {
+        const sliceBytes = xLength * yLength * bytesPerVoxel;
+        return Promise.all(Array.from({ length: numSlabs }, async (_, s) => {
+            const zStart    = s * slabDepth;
+            const zEnd      = Math.min(zStart + slabDepth, zLength);
+            const byteStart = dataOffset + zStart * sliceBytes;
+            const byteEnd   = dataOffset + zEnd   * sliceBytes - 1;
+            const resp  = await fetch(url, { headers: { Range: `bytes=${byteStart}-${byteEnd}` } });
+            let raw = new Uint8Array(await resp.arrayBuffer());
+
+            if (bytesPerVoxel === 2) {
+                if (endian === 'big') {
+                    for (let i = 0; i < raw.length - 1; i += 2) {
+                        const tmp = raw[i]; raw[i] = raw[i + 1]; raw[i + 1] = tmp;
+                    }
+                }
+                // Normalize uint16 → uint8: >>5 maps mean→~49, P99→~220
+                const u16 = new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+                const u8  = new Uint8Array(u16.length);
+                for (let i = 0; i < u16.length; i++) u8[i] = Math.min(255, u16[i] >> 5);
+                raw = u8;
+            }
+
+            console.log(`Slab ${s + 1}/${numSlabs} fetched`);
+            return { chunk: raw, zStart, zEnd };
+        }));
+    }
+
+    const { xLength, yLength, zLength, encoding, dataOffset, bytesPerVoxel, endian } = await fetchNRRDHeader(NRRD_URL);
+
+    const rawTotalBytes = xLength * yLength * zLength * bytesPerVoxel;
+    const numSlabs      = Math.max(1, Math.ceil(rawTotalBytes / MAX_SLAB_BYTES));
+    if (numSlabs > MAX_SLABS) throw new Error(`Volume requires ${numSlabs} slabs but MAX_SLABS is ${MAX_SLABS}. Reduce MAX_SLAB_BYTES or increase MAX_SLABS in raymarch.js.`);
+    const slabDepth = Math.ceil(zLength / numSlabs);
+
+    const totalBytes = xLength * yLength * zLength;
+    console.log(`Volume: ${xLength}x${yLength}x${zLength}, ${(totalBytes / 1e9).toFixed(2)} GB → ${numSlabs} slab(s)`);
+
+    let rawSlabs;
+    if (encoding === 'gzip' || encoding === 'gz') {
+        const head = await fetch(NRRD_URL, { method: 'HEAD' });
+        const totalFileSize = parseInt(head.headers.get('Content-Length'), 10);
+        rawSlabs = await loadSlabsStreaming(NRRD_URL, dataOffset, totalFileSize, xLength, yLength, zLength, numSlabs, slabDepth);
+    } else {
+        rawSlabs = await loadSlabsRaw(NRRD_URL, dataOffset, xLength, yLength, zLength, numSlabs, slabDepth, bytesPerVoxel, endian);
+    }
+
+    const slabTextures = [];
+    const slabStarts = new Array(MAX_SLABS).fill(0);
+    const slabEnds   = new Array(MAX_SLABS).fill(0);
+
+    for (let s = 0; s < rawSlabs.length; s++) {
+        const { chunk, zStart, zEnd } = rawSlabs[s];
+        const depth = zEnd - zStart;
+        const tex = new THREE.Data3DTexture(chunk, xLength, yLength, depth);
+        tex.format = THREE.RedFormat;
+        tex.type = THREE.UnsignedByteType;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.unpackAlignment = 1;
+        tex.needsUpdate = true;
+        slabTextures.push(tex);
+        slabStarts[s] = zStart / zLength;
+        slabEnds[s]   = zEnd   / zLength;
+    }
+    console.log("rayMarchMaterial =", rayMarchMaterial);
+    console.log("uniforms =", rayMarchMaterial?.uniforms);
+    rayMarchMaterial.uniforms.volumeTextures.value = slabTextures;
+    rayMarchMaterial.uniforms.slabStarts.value = slabStarts;
+    rayMarchMaterial.uniforms.slabEnds.value = slabEnds;
+    rayMarchMaterial.uniforms.numSlabs.value = numSlabs;
+
+    return { sx: xLength, sy: yLength, sz: zLength };
+}
+
+const { sx, sy, sz } = await (USE_LARGE_FILE_LOADER ? loadLargeFiles() : loadTrad());
+
 
 const geometry = new THREE.BoxGeometry(1, 1, 1);  // size in world units
 const material = new THREE.ShaderMaterial({
@@ -57,20 +210,16 @@ const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     transparent: true,
 });
-
 // Volume mesh (the box the shader raymarches inside)
 const mesh = new THREE.Mesh(geometry, material);
 
-const sx = nrrd.xLength, sy = nrrd.yLength, sz = nrrd.zLength;
 const maxDim = Math.max(sx, sy, sz);
-const worldMax = 20; // choose how big the volume should be in world units
 
 mesh.scale.set(
-  (sx / maxDim) * worldMax,
-  (sy / maxDim) * worldMax,
-  (sz / maxDim) * worldMax
+  (sx / maxDim) * WORLD_MAX,
+  (sy / maxDim) * WORLD_MAX,
+  (sz / maxDim) * WORLD_MAX
 );
-
 let controller1, controller2;
 let controllerGrip1, controllerGrip2;
 const camera = new THREE.PerspectiveCamera(
@@ -96,7 +245,6 @@ renderer.xr.addEventListener("sessionstart", ()=> {
 
 
 
-renderer.setSize(renderWidth, renderHeight, false); // 'false' preserves canvas CSS size
 
 
 renderer.domElement.style.width = window.innerWidth + "px";
@@ -112,6 +260,14 @@ player.add(camera);
 scene.add(player);
 const vrButton =  VRButton.createButton( renderer, {optionalFeatures: ["hand-tracking", "layers"]} );
 document.body.appendChild(vrButton);
+
+// Auto-enter VR as soon as the button is ready, without waiting for frontend signal
+const vrAutoClick = setInterval(() => {
+  if (vrButton.textContent === 'ENTER VR') {
+    vrButton.click();
+    clearInterval(vrAutoClick);
+  }
+}, 500);
 
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -183,6 +339,7 @@ function handleControllerMovement(handedness,leftx=0,lefty=0,righty=0) {
   
 }
 
+const headsetForward = new THREE.Vector3(0, 0, -1); // default forward
 
 
 function movePlayerHorizontal(x, y) {
@@ -222,10 +379,20 @@ window.addEventListener(
 			
 
 
+let _pendingInputTs = null;
+let _inputReceivedAt = null;
+let _backendFrameCount = 0;
+let _backendLastFpsTime = performance.now();
+let _lastRaymarchMs = 0;
+let _lastErpMs = 0;
+let _avgEncodeMs = 0;
+
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
-
+pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
+pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
+pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
 
@@ -234,44 +401,28 @@ ws.onopen = async () => {
   ws.send(JSON.stringify({ role: "streamer" }));
 
 
-  function preferH264(sdp) {
-    const lines = sdp.split("\r\n");
-    const mLineIndex = lines.findIndex(l => l.startsWith("m=video"));
-    if (mLineIndex < 0) return sdp;
-    
-    const h264Payload = lines
-        .filter(l => l.includes("H264/90000"))
-        .map(l => l.match(/:(\d+) H264\/90000/)[1])[0];
 
-    if (!h264Payload) return sdp;
 
-    const parts = lines[mLineIndex].split(" ");
-    lines[mLineIndex] = [...parts.slice(0, 3), h264Payload, ...parts.slice(3).filter(p => p !== h264Payload)].join(" ");
-    return lines.join("\r\n");
-  }
-  
   // Create offer to headset
   const offer = await pc.createOffer();
-  offer.sdp = preferH264(offer.sdp);
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
     if (!sender.track || sender.track.kind !== 'video') return;
     const p = sender.getParameters();
     if (!p.encodings) p.encodings = [{}];
     Object.assign(p.encodings[0], {
-    maxBitrate: 25_000_000,     // start ~10 Mbps per stream; tune up/down
-    maxFramerate: 90,           // match capture target
-    priority: "high",
-    networkPriority: "high",
-    scaleResolutionDownBy: 1.0  // raise (e.g., 1.25–2) if encoder is the bottleneck
-
+      maxBitrate: MAX_BITRATE,
+      maxFramerate: MAX_FRAMERATE,
+      priority: "high",
+      networkPriority: "high",
+      scaleResolutionDownBy: 1.0
     });
     p.degradationPreference = 'maintain-resolution';
     sender.setParameters(p).catch(()=>{});
     const effective = sender.getParameters();
     console.log('encodings after setParameters', effective.encodings);
-    // Content hint on the track itself:
-    try { sender.track.contentHint = 'motion'; } catch {}
+    // 'detail' preserves fine structure; correct for slow-moving volumetric renders
+    try { sender.track.contentHint = 'detail'; } catch {}
   });
   ws.send(
     JSON.stringify({
@@ -285,14 +436,14 @@ ws.onopen = async () => {
 };
 
 
-let newcamLeft = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
-let newcamRight = new THREE.PerspectiveCamera(75, renderWidth / renderHeight, 0.1, 1000);
+let newcamLeft = new THREE.PerspectiveCamera(75, RENDER_WIDTH / RENDER_HEIGHT, 0.1, 1000);
+let newcamRight = new THREE.PerspectiveCamera(75, RENDER_WIDTH / RENDER_HEIGHT, 0.1, 1000);
 
 
 
 
 
-let ipd = 0.064;
+let ipd = INITIAL_IPD;
 newcamLeft.position.set(-ipd / 2, 0, 0);
 newcamRight.position.set(ipd / 2, 0, 0);
 const newplayer = new THREE.Group();
@@ -303,15 +454,7 @@ scene.add(newplayer);
 
 ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
-    if (data.xr === true) {
-  if (vrButton) {
-    console.log("📢 Triggering VRButton click from WS event");
-    vrButton.click();
-    
-  } else {
-    console.warn("⚠️ VRButton not found in DOM");
-  }
-  }
+  
   
   if (data.type === "onehand") {
   mesh.position.add(new THREE.Vector3(
@@ -352,10 +495,12 @@ ws.onmessage = async (event) => {
 
   if (data.type === "left")
   {
+    if (data._t !== undefined) { _pendingInputTs = data._t; _inputReceivedAt = performance.now(); }
     handleControllerMovement("left",data.lx,data.ly,0);
   }
   if(data.type === "right")
   {
+    if (data._t !== undefined) { _pendingInputTs = data._t; _inputReceivedAt = performance.now(); }
     handleControllerMovement("right",0,0,data.ry);
   }
  if(data.type === "pose") {
@@ -397,46 +542,26 @@ pc.onicecandidate = (event) => {
     );
   }
 };
-const streamRendererLeft = new THREE.WebGLRenderer({  alpha: false,
+const streamRenderer = new THREE.WebGLRenderer({
+  alpha: false,
   depth: false,
   stencil: false,
   antialias: false,
   premultipliedAlpha: false,
   preserveDrawingBuffer: false,
-
 });
-const streamRendererRight = new THREE.WebGLRenderer( { alpha: false,
-  depth: false,
-  stencil: false,
-  antialias: false,
-  premultipliedAlpha: false,
-  preserveDrawingBuffer: false,
+streamRenderer.setSize(RENDER_WIDTH, RENDER_HEIGHT * 2);
 
-});
-streamRendererLeft.setSize(renderWidth,renderHeight);
-
-streamRendererLeft.xr.enabled = true;
-
-streamRendererRight.setSize(renderWidth,renderHeight);
-
-
-streamRendererRight.xr.enabled = true;
-
-const cubeMapSize = renderWidth;
+const cubeMapSize = RENDER_WIDTH;
 const options = { format: THREE.RGBAFormat, magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter };
 const renderTarget = new THREE.WebGLCubeRenderTarget(cubeMapSize, options);
 const cubeCamera = new THREE.CubeCamera(0.1, 2000, renderTarget);
 
+const equiLeft  = new CubemapToEquirectangular(streamRenderer, cubeCamera, renderTarget, RENDER_WIDTH, RENDER_HEIGHT);
+const equiRight = new CubemapToEquirectangular(streamRenderer, cubeCamera, renderTarget, RENDER_WIDTH, RENDER_HEIGHT);
 
-
-const equiLeft = new CubemapToEquirectangular(streamRendererLeft, cubeCamera, renderTarget, renderWidth, renderHeight);
-const equiRight = new CubemapToEquirectangular(streamRendererRight, cubeCamera, renderTarget, renderWidth, renderHeight);
-
-// Add stream
-const streamLeft = streamRendererLeft.domElement.captureStream();
-streamLeft.getTracks().forEach((track) => pc.addTrack(track, streamLeft));
-const streamRight = streamRendererRight.domElement.captureStream();
-streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
+const combinedStream = streamRenderer.domElement.captureStream();
+combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream));
 
 
 
@@ -445,8 +570,30 @@ streamRight.getTracks().forEach((track) => pc.addTrack(track, streamRight));
 
 
 
+
+// Poll outbound-rtp for average encode time per frame and bandwidth
+const _encodePrev = {};
+const _BW_INTERVAL_MS = 2000;
+setInterval(async () => {
+  if (pc.connectionState !== 'connected') return;
+  const stats = await pc.getStats();
+  stats.forEach(report => {
+    if (report.type !== 'outbound-rtp' || report.kind !== 'video') return;
+    const p = _encodePrev[report.ssrc] || {};
+    const dtEncode = (report.totalEncodeTime || 0) - (p.totalEncodeTime || 0);
+    const dtFrames = (report.framesEncoded || 0) - (p.framesEncoded || 0);
+    if (dtFrames > 0) _avgEncodeMs = (dtEncode / dtFrames) * 1000;
+
+    const dtBytes = (report.bytesSent || 0) - (p.bytesSent || 0);
+    const mbps = (dtBytes * 8) / (_BW_INTERVAL_MS / 1000) / 1e6;
+    console.log(`[BANDWIDTH] ${mbps.toFixed(2)} Mbps (${(dtBytes / 1024).toFixed(0)} KB in ${_BW_INTERVAL_MS}ms)`);
+
+    _encodePrev[report.ssrc] = { totalEncodeTime: report.totalEncodeTime, framesEncoded: report.framesEncoded, bytesSent: report.bytesSent };
+  });
+}, _BW_INTERVAL_MS);
 
 renderer.setAnimationLoop(function () {
+  const _frameStartMs = performance.now();
   stats.begin();
   const xrCam = renderer.xr.getCamera(camera);
   if (!xrCam.cameras || xrCam.cameras.length < 2) {
@@ -464,13 +611,36 @@ renderer.setAnimationLoop(function () {
   newcamLeft.quaternion.copy(newplayer.quaternion);
   newcamRight.quaternion.copy(newplayer.quaternion);
 
+  // Left eye → top half of canvas
+  streamRenderer.setScissor(0, RENDER_HEIGHT, RENDER_WIDTH, RENDER_HEIGHT);
+  streamRenderer.setViewport(0, RENDER_HEIGHT, RENDER_WIDTH, RENDER_HEIGHT);
   equiLeft.update(newcamLeft, scene);
-  equiRight.update(newcamRight, scene);
-  
-  
-  
-  renderer.render(scene,camera);
 
+  // Right eye → bottom half
+  streamRenderer.setScissor(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
+  streamRenderer.setViewport(0, 0, RENDER_WIDTH, RENDER_HEIGHT);
+  equiRight.update(newcamRight, scene);
+
+  _lastRaymarchMs = (equiLeft.lastRaymarchMs || 0) + (equiRight.lastRaymarchMs || 0);
+  _lastErpMs = (equiLeft.lastErpMs || 0) + (equiRight.lastErpMs || 0);
+
+
+  _backendFrameCount++;
+  const _now = performance.now();
+  if (_now - _backendLastFpsTime >= 2000) {
+    const fps = (_backendFrameCount / (_now - _backendLastFpsTime) * 1000).toFixed(1);
+    console.log(`[BACKEND-FPS] ${fps} fps`);
+    _backendFrameCount = 0;
+    _backendLastFpsTime = _now;
+  }
+
+  if (_pendingInputTs !== null && ws.readyState === WebSocket.OPEN) {
+    const frameWaitMs = _inputReceivedAt !== null ? _frameStartMs - _inputReceivedAt : 0;
+    ws.send(JSON.stringify({ type: "render_ack", t: _pendingInputTs, raymarchMs: _lastRaymarchMs, erpMs: _lastErpMs, encodeMs: _avgEncodeMs, frameWaitMs }));
+    _pendingInputTs = null;
+    _inputReceivedAt = null;
+  }
+  renderer.render(scene,camera);
   stats.end();
 
   

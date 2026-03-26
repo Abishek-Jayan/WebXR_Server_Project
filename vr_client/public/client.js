@@ -4,7 +4,9 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import Stats from './jsm/libs/stats.module.js';
-import HOSTNAME from "../../image_server/public/env.js";
+import { HOSTNAME } from "../../image_server/public/env.js";
+import { print_network_log, print_video_fps, start_receiver_stats } from "../../logging/network_logging.js";
+import { log, setSender } from "../../logging/logger.js";
 
 let hand1, hand2;
 let controller1, controller2;
@@ -28,13 +30,41 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(VRButton.createButton(renderer, {optionalFeatures: ["hand-tracking", "layers"]} ));
 renderer.xr.enabled = true;
-camera.layers.enable(1); // Left eye sees layer 1
-camera.layers.enable(2); // Right eye sees layer 2
-
-renderer.xr.addEventListener("sessionstart", ()=> {
+    camera.layers.enable(1);
+    camera.layers.enable(2);
+renderer.xr.addEventListener("sessionstart", async () => {
   console.log("VR Session Started");
-    ws.send(JSON.stringify({ xr: true }));
 
+  const session = renderer.xr.getSession();
+  const hasLayers = typeof XRMediaBinding !== 'undefined';
+
+  if (hasLayers) {
+    try {
+      const refSpace = await session.requestReferenceSpace("local");
+      const mediaBinding = new XRMediaBinding(session);
+      const equirectLayer = mediaBinding.createEquirectangularLayer(video, {
+        space: refSpace,
+        layout: "stereo-top-bottom",
+        centralHorizontalAngle: 2 * Math.PI,
+        upperVerticalAngle: Math.PI / 2,
+        lowerVerticalAngle: Math.PI / 2,
+      });
+      session.updateRenderState({ layers: [equirectLayer] });
+      console.log("XRMediaBinding equirect layer set up successfully");
+    } catch (e) {
+      console.error("XRMediaBinding failed, falling back to video spheres:", e);
+      player.add(videoSphereLeft);
+      player.add(videoSphereRight);
+      videoSphereLeft.layers.set(1);
+      videoSphereRight.layers.set(2);
+    }
+  } else {
+    console.log("XRMediaBinding not available, using video spheres");
+    player.add(videoSphereLeft);
+    player.add(videoSphereRight);
+    videoSphereLeft.layers.set(1);
+    videoSphereRight.layers.set(2);
+  }
 });
 
 
@@ -104,13 +134,13 @@ function handleControllerMovement() {
       // Left controller → XY walking
       const lx = axes[2] || axes[0]; // left/right stick (varies by headset)
       const ly = axes[3] || axes[1]; // forward/back stick
-      ws.send(JSON.stringify({type:"left",lx:lx,ly:ly}));
+      ws.send(JSON.stringify({type:"left",lx:lx,ly:ly,_t:Date.now()}));
     }
 
       if (source.handedness === "right") {
       // Right controller → vertical
       const ry = axes[3] || axes[1] || 0;
-      ws.send(JSON.stringify({type:"right",ry:ry}));
+      ws.send(JSON.stringify({type:"right",ry:ry,_t:Date.now()}));
 
     }
     
@@ -210,59 +240,53 @@ function sendOneHandGrab(hand, side) {
   }
 }
 
-const videoLeft = document.createElement("video");
-const videoRight = document.createElement("video");
+const video = document.createElement("video");
+video.autoplay = true;
+video.playsInline = true;
+video.muted = true;
 
-// Create a texture from your 2D canvas
-const videoTextureLeft = new THREE.VideoTexture(videoLeft);
-videoTextureLeft.minFilter = THREE.LinearFilter;
-videoTextureLeft.magFilter = THREE.LinearFilter;
-videoTextureLeft.generateMipmaps = false;
-videoTextureLeft.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+// Left eye samples top half of the combined stereo video
+const texLeft = new THREE.VideoTexture(video);
+texLeft.minFilter = THREE.LinearFilter;
+texLeft.magFilter = THREE.LinearFilter;
+texLeft.generateMipmaps = false;
+texLeft.colorSpace = THREE.SRGBColorSpace;
+texLeft.repeat.set(1, 0.5);
+texLeft.offset.set(0, 0.5);
 
-const videoTextureRight = new THREE.VideoTexture(videoRight);
-videoTextureRight.minFilter = THREE.LinearFilter;
-videoTextureRight.magFilter = THREE.LinearFilter;
-videoTextureRight.generateMipmaps = false;
-videoTextureRight.colorSpace = THREE.SRGBColorSpace; // if your pipeline uses sRGB
+// Right eye samples bottom half of the combined stereo video
+const texRight = new THREE.VideoTexture(video);
+texRight.minFilter = THREE.LinearFilter;
+texRight.magFilter = THREE.LinearFilter;
+texRight.generateMipmaps = false;
+texRight.colorSpace = THREE.SRGBColorSpace;
+texRight.repeat.set(1, 0.5);
+texRight.offset.set(0, 0);
 
+const videoMaterialLeft  = new THREE.MeshBasicMaterial({ map: texLeft,  toneMapped: false, side: THREE.BackSide });
+const videoMaterialRight = new THREE.MeshBasicMaterial({ map: texRight, toneMapped: false, side: THREE.BackSide });
 
-const videoMaterialLeft = new THREE.MeshBasicMaterial({ map: videoTextureLeft, toneMapped: false, side: THREE.BackSide });
-const videoMaterialRight = new THREE.MeshBasicMaterial({ map: videoTextureRight, toneMapped: false, side: THREE.BackSide});
-
-
-// Create a sphere that surrounds the user
-const radius = 10.0; // Adjust for comfort (1.5–3.0)
-const sphereGeometry = new THREE.SphereGeometry(radius, 60, 40);
-// Invert the faces to render inside
-
-
-const videoSphereLeft = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
+const sphereGeometry = new THREE.SphereGeometry(10.0, 60, 40);
+const videoSphereLeft  = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
 const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
-
-
-
-videoLeft.autoplay = true;
-videoLeft.playsInline = true;
-videoLeft.muted = true;  // WebRTC requires muted autoplay sometimes
-videoRight.autoplay = true;
-videoRight.playsInline = true;
-videoRight.muted = true;  // WebRTC requires muted autoplay sometimes
+// spheres are added to scene in sessionstart (fallback path only)
 
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
 const xrCamera = renderer.xr.getCamera(camera);
-player.add(videoSphereLeft);
-player.add(videoSphereRight);
-videoSphereLeft.layers.set(1);
-videoSphereRight.layers.set(2);
+
 
 
 const pc = new RTCPeerConnection({
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     });
+const _receiverStats = start_receiver_stats(pc);
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
+setSender((line) => {
+  if (ws.readyState === WebSocket.OPEN)
+    ws.send(JSON.stringify({ type: "log", msg: line }));
+});
 
 ws.onopen = () => {
   console.log("Connected to signaling server (headset)");
@@ -362,19 +386,50 @@ ws.onmessage = async (event) => {
       console.error("Error adding candidate:", err);
     }
   }
+
+  if (data.type === "render_ack") {
+    const _ackTs = data.t;
+    const _ackData = data;
+    video.requestVideoFrameCallback((_now, metadata) => {
+      const presentMs = metadata.presentationTime != null
+        ? metadata.presentationTime + performance.timeOrigin
+        : Date.now();
+      const totalMs = Math.round(presentMs - _ackTs);
+      const rttHalf = _receiverStats.getNetworkMs();
+      const inputTransitMs = rttHalf.toFixed(1);
+      const videoTransitMs = rttHalf.toFixed(1);
+      const frameWaitMs = (_ackData.frameWaitMs ?? 0).toFixed(1);
+      const jitterBufferMs = _receiverStats.getJitterBufferMs().toFixed(1);
+      const decodeMs = _receiverStats.getDecodeMs().toFixed(1);
+      const displayMs = (metadata.expectedDisplayTime && metadata.presentationTime)
+        ? (metadata.expectedDisplayTime - metadata.presentationTime).toFixed(1)
+        : 'N/A';
+      const captureNote = (metadata.captureTime && metadata.receiveTime)
+        ? ` [RTP encode+net=${(metadata.receiveTime - metadata.captureTime).toFixed(1)}ms]`
+        : '';
+      log(
+        `[LATENCY BREAKDOWN]\n` +
+        `  input → server     : ${inputTransitMs} ms (≈RTT/2)\n` +
+        `  frame sched. wait  : ${frameWaitMs} ms\n` +
+        `  raymarch rendering : ${_ackData.raymarchMs?.toFixed(1) ?? 'N/A'} ms\n` +
+        `  cubemap → ERP      : ${_ackData.erpMs?.toFixed(1) ?? 'N/A'} ms\n` +
+        `  WebRTC encode      : ${_ackData.encodeMs?.toFixed(1) ?? 'N/A'} ms${captureNote}\n` +
+        `  video → headset    : ${videoTransitMs} ms (≈RTT/2)\n` +
+        `  jitter buffer      : ${jitterBufferMs} ms\n` +
+        `  decode on headset  : ${decodeMs} ms\n` +
+        `  display vsync      : ${displayMs} ms\n` +
+        `  ─────────────────────────\n` +
+        `  input → photon     : ${totalMs} ms`
+      );
+    });
+  }
 };
 
-let res = [];
 pc.ontrack = (event) => {
-    console.log("ontrack fired:", event.track, "streams:", event.streams);
-    res.push(event.streams[0]);
-    console.log(res);
-    if (res.length == 2) {
-      videoLeft.srcObject = res[0];
-      videoRight.srcObject = res[1];
-      videoLeft.play();
-      videoRight.play();
-    }
+  console.log("ontrack fired:", event.track, "streams:", event.streams);
+  video.srcObject = event.streams[0];
+  video.play();
+  print_video_fps(video);
 };
 
 // Send ICE candidates
@@ -384,5 +439,6 @@ pc.onicecandidate = (event) => {
       type: "candidate",
       candidate: event.candidate,
     }));
-  } 
+  }
 };
+print_network_log(pc);

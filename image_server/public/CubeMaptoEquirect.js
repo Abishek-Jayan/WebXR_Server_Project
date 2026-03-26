@@ -90,7 +90,14 @@ export class CubemapToEquirectangular {
     update(camera, scene) {
         this.cubeCamera.position.copy(camera.position);
         this.cubeCamera.quaternion.copy(camera.quaternion);
+        const _t0 = performance.now();
+        this.renderer.setScissorTest(false);  // cube FBO renders must not be clipped
         this.cubeCamera.update(this.renderer, scene);
+        const _t1 = performance.now();
+        this.renderer.setScissorTest(true);   // ERP blit respects caller-set viewport/scissor
         this.convert(this.cubeCamera);
+        const _t2 = performance.now();
+        this.lastRaymarchMs = _t1 - _t0;
+        this.lastErpMs = _t2 - _t1;
     }
 }

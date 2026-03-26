@@ -2,7 +2,7 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { default: HOSTNAME } = require('../image_server/public/env');
+const { default: HOSTNAME } = require("../image_server/public/env");
 
 const app = express();
 
@@ -10,8 +10,6 @@ const app = express();
 app.use(express.static(__dirname + '/public'));
 app.use('/build/', express.static(path.join(__dirname, 'node_modules/three/build')));
 app.use('/jsm/', express.static(path.join(__dirname, 'node_modules/three/examples/jsm')));
-app.use('/image_server/public', express.static(path.join(__dirname, '../image_server/public')));
-app.use('/logging/', express.static(path.join(__dirname, '../logging')));
 
 // read your self-signed cert + key
 const options = {
@@ -20,7 +18,7 @@ const options = {
 };
 
 // create HTTPS server
-https.createServer(options, app).listen(3000, '0.0.0.0', () => {
-  console.log(`Server running on https://${HOSTNAME}:3000`);
+https.createServer(options, app).listen(3001, '0.0.0.0', () => {
+  console.log(`Server running on https://${HOSTNAME}:3001`);
 });
 

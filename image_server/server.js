@@ -9,6 +9,24 @@ const { default: HOSTNAME } = require("./public/env");
 
 const PORT = 3001;
 
+const sessionTs = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+const LOG_FILE = path.join(__dirname, '..', 'logs', `session_${sessionTs}.log`);
+fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+
+const _lastLogTime = {};
+const LOG_THROTTLE_MS = 2000;
+
+function writeLog(source, text) {
+  if (text.includes('[LATENCY BREAKDOWN]')) {
+    const key = `${source}:latency`;
+    const now = Date.now();
+    if (now - (_lastLogTime[key] || 0) < LOG_THROTTLE_MS) return;
+    _lastLogTime[key] = now;
+  }
+  const ts = new Date().toISOString();
+  fs.appendFile(LOG_FILE, `[${ts}] [${source}] ${text}\n`, () => {});
+}
+
 const app = express();
 
 // serve static files
@@ -69,9 +87,6 @@ wss.on("connection", (ws, req) => {
     if (data.type === "pose" && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
-    if (data.xr && streamerSocket) {
-      streamerSocket.send(JSON.stringify(data));
-    }
     if (data.move && streamerSocket) {
       streamerSocket.send(JSON.stringify(data));
     }
@@ -91,6 +106,9 @@ wss.on("connection", (ws, req) => {
       console.log("Recieved offer from headset, forwarding it to streamer");
       streamerSocket.send(JSON.stringify(data));
     }
+    if (data.type === "render_ack" && headsetSocket) {
+      headsetSocket.send(JSON.stringify(data));
+    }
     if (data.type === "candidate") {
       if (ws.role === "streamer" && headsetSocket) {
     headsetSocket.send(JSON.stringify(data));
@@ -98,6 +116,11 @@ wss.on("connection", (ws, req) => {
     streamerSocket.send(JSON.stringify(data));
   }
   return;
+    }
+
+    if (data.type === "log") {
+      writeLog('vr-client', data.msg);
+      return;
     }
 
   });
@@ -116,26 +139,30 @@ server.listen(PORT, "0.0.0.0", async () => {
   console.log(`Streamer server running on https://${HOSTNAME}:${PORT}`);
 
   const browser = await puppeteer.launch({
-    ignoreHTTPSErrors: true,
+    browser: "chrome",
+    acceptInsecureCerts: true, //DO NOT CHANGE THIS
     headless: true,
     pipe: true,
     devtools: true,
     args: [
       "--enable-gpu",
-      "--no-sandbox",
       "--use-vulkan",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--js-flags=--max_old_space_size=8192",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",
       `--disable-extensions-except=${pathToExtension}`,
       `--load-extension=${pathToExtension}`,
-      
     ],
   });
 
   // open your Three.js streamer page
   await browser.newPage().then((page) =>{
       page.on("console", (msg) => {
-    console.log(`📢 [Browser] ${msg.type()}: ${msg.text()}`);
+    const text = msg.text();
+    console.log(`📢 [Browser] ${msg.type()}: ${text}`);
+    writeLog('image-server', text);
   });
 
   page.on("pageerror", (err) => {

@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { VRButton } from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
-import rayMarchMaterial, { MAX_SLABS } from "../image_server/public/raymarch.js";
-import { USE_LARGE_FILE_LOADER, WORLD_MAX,NRRD_URL } from "../image_server/public/env.js";
+import rayMarchMaterial from "../image_server/public/raymarch.js";
+import { USE_LARGE_FILE_LOADER, WORLD_MAX, NRRD_URL, MAX_SLABS } from "../image_server/public/env.js";
 import Stats from './jsm/libs/stats.module.js';
 
 const scene = new THREE.Scene();

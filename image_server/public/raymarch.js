@@ -105,7 +105,7 @@ const material = new THREE.ShaderMaterial({
                 if (alpha >= 0.99) break;
             }
 
-            gl_FragColor = vec4(accum, accum, accum, 1.0);
+            gl_FragColor = vec4(accum, accum, accum, alpha);
         }
     `,
 

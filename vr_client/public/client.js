@@ -22,7 +22,6 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-scene.background = new THREE.Color(0x658CBB); // Set background to red
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
 scene.add(ambientLight);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -53,17 +52,7 @@ renderer.xr.addEventListener("sessionstart", async () => {
       console.log("XRMediaBinding equirect layer set up successfully");
     } catch (e) {
       console.error("XRMediaBinding failed, falling back to video spheres:", e);
-      player.add(videoSphereLeft);
-      player.add(videoSphereRight);
-      videoSphereLeft.layers.set(1);
-      videoSphereRight.layers.set(2);
     }
-  } else {
-    console.log("XRMediaBinding not available, using video spheres");
-    player.add(videoSphereLeft);
-    player.add(videoSphereRight);
-    videoSphereLeft.layers.set(1);
-    videoSphereRight.layers.set(2);
   }
 });
 
@@ -269,7 +258,10 @@ const videoMaterialRight = new THREE.MeshBasicMaterial({ map: texRight, toneMapp
 const sphereGeometry = new THREE.SphereGeometry(10.0, 60, 40);
 const videoSphereLeft  = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
 const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
-// spheres are added to scene in sessionstart (fallback path only)
+player.add(videoSphereLeft);
+player.add(videoSphereRight);
+videoSphereLeft.layers.set(1);
+videoSphereRight.layers.set(2);
 
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();

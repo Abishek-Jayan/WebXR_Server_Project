@@ -7,8 +7,21 @@ import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
 import { HOSTNAME, NRRD_URL, USE_LARGE_FILE_LOADER, RENDER_WIDTH, RENDER_HEIGHT, WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE } from "./env.js";
+import { Sky } from './jsm/objects/Sky.js';
 
 const scene = new THREE.Scene();
+
+const sky = new Sky();
+sky.scale.setScalar(10000);
+scene.add(sky);
+const sun = new THREE.Vector3();
+const skyUniforms = sky.material.uniforms;
+skyUniforms['turbidity'].value = 8;
+skyUniforms['rayleigh'].value = 3;
+skyUniforms['mieCoefficient'].value = 0.01;
+skyUniforms['mieDirectionalG'].value = 0.7;
+sun.setFromSphericalCoords(1, THREE.MathUtils.degToRad(88), THREE.MathUtils.degToRad(180));
+skyUniforms['sunPosition'].value.copy(sun);
 const stats = new Stats();
 document.body.appendChild(stats.dom);
 

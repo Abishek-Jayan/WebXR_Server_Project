@@ -7,8 +7,21 @@ import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
 import { HOSTNAME, NRRD_URL, USE_LARGE_FILE_LOADER, RENDER_WIDTH, RENDER_HEIGHT, WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE } from "./env.js";
+import { Sky } from './jsm/objects/Sky.js';
 
 const scene = new THREE.Scene();
+
+const sky = new Sky();
+sky.scale.setScalar(10000);
+scene.add(sky);
+const sun = new THREE.Vector3();
+const skyUniforms = sky.material.uniforms;
+skyUniforms['turbidity'].value = 8;
+skyUniforms['rayleigh'].value = 3;
+skyUniforms['mieCoefficient'].value = 0.01;
+skyUniforms['mieDirectionalG'].value = 0.7;
+sun.setFromSphericalCoords(1, THREE.MathUtils.degToRad(88), THREE.MathUtils.degToRad(180));
+skyUniforms['sunPosition'].value.copy(sun);
 const stats = new Stats();
 document.body.appendChild(stats.dom);
 
@@ -353,7 +366,7 @@ function movePlayerHorizontal(x, y) {
 
   // Move player rig
   newplayer.position.addScaledVector(dir, -y * speed);     // forward/back 
-  newplayer.position.addScaledVector(strafe, x * speed);   // left/right
+  newplayer.position.addScaledVector(strafe, -x * speed);   // left/right
 }
 
 
@@ -387,7 +400,7 @@ let _lastRaymarchMs = 0;
 let _lastErpMs = 0;
 let _avgEncodeMs = 0;
 
-const pc = new RTCPeerConnection({
+let pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
 pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
@@ -396,14 +409,7 @@ pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", 
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
 
-ws.onopen = async () => {
-  console.log("Connected to signaling server (streamer)");
-  ws.send(JSON.stringify({ role: "streamer" }));
-
-
-
-
-  // Create offer to headset
+async function sendNewOffer() {
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
@@ -421,18 +427,16 @@ ws.onopen = async () => {
     sender.setParameters(p).catch(()=>{});
     const effective = sender.getParameters();
     console.log('encodings after setParameters', effective.encodings);
-    // 'detail' preserves fine structure; correct for slow-moving volumetric renders
     try { sender.track.contentHint = 'detail'; } catch {}
   });
-  ws.send(
-    JSON.stringify({
-      role: "streamer",
-      type: "offer",
-      offer: pc.localDescription,
-    })
-  );
+  ws.send(JSON.stringify({ role: "streamer", type: "offer", offer: pc.localDescription }));
   console.log("Sent offer to server");
+}
 
+ws.onopen = async () => {
+  console.log("Connected to signaling server (streamer)");
+  ws.send(JSON.stringify({ role: "streamer" }));
+  await sendNewOffer();
 };
 
 
@@ -507,13 +511,17 @@ ws.onmessage = async (event) => {
   const q = data.quaternion;
 
   const forward = new THREE.Vector3(0, 0, -1); // camera looks down -Z
-  forward.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+  forward.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w).invert());
 
   // Optional: ignore vertical component so movement is on XZ plane
   forward.y = 0;
   forward.normalize();
 
   headsetForward.copy(forward);
+  }
+
+  if (data.type === "headset_joined") {
+    await reinitWebRTC();
   }
 
   if (data.type === "answer") {
@@ -563,12 +571,19 @@ const equiRight = new CubemapToEquirectangular(streamRenderer, cubeCamera, rende
 const combinedStream = streamRenderer.domElement.captureStream();
 combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream));
 
-
-
-
-
-
-
+async function reinitWebRTC() {
+  console.log("[WebRTC] Reinitializing connection");
+  pc.close();
+  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
+  pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
+  pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
+  pc.onicecandidate = (event) => {
+    if (event.candidate) ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+  };
+  combinedStream.getTracks().forEach(track => pc.addTrack(track, combinedStream));
+  await sendNewOffer();
+}
 
 
 // Poll outbound-rtp for average encode time per frame and bandwidth

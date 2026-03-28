@@ -22,7 +22,6 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   1000
 );
-scene.background = new THREE.Color(0x658CBB); // Set background to red
 const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); 
 scene.add(ambientLight);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -53,17 +52,7 @@ renderer.xr.addEventListener("sessionstart", async () => {
       console.log("XRMediaBinding equirect layer set up successfully");
     } catch (e) {
       console.error("XRMediaBinding failed, falling back to video spheres:", e);
-      player.add(videoSphereLeft);
-      player.add(videoSphereRight);
-      videoSphereLeft.layers.set(1);
-      videoSphereRight.layers.set(2);
     }
-  } else {
-    console.log("XRMediaBinding not available, using video spheres");
-    player.add(videoSphereLeft);
-    player.add(videoSphereRight);
-    videoSphereLeft.layers.set(1);
-    videoSphereRight.layers.set(2);
   }
 });
 
@@ -269,7 +258,10 @@ const videoMaterialRight = new THREE.MeshBasicMaterial({ map: texRight, toneMapp
 const sphereGeometry = new THREE.SphereGeometry(10.0, 60, 40);
 const videoSphereLeft  = new THREE.Mesh(sphereGeometry, videoMaterialLeft);
 const videoSphereRight = new THREE.Mesh(sphereGeometry, videoMaterialRight);
-// spheres are added to scene in sessionstart (fallback path only)
+player.add(videoSphereLeft);
+player.add(videoSphereRight);
+videoSphereLeft.layers.set(1);
+videoSphereRight.layers.set(2);
 
 let pos = new THREE.Vector3();
 let quat = new THREE.Quaternion();
@@ -277,10 +269,26 @@ const xrCamera = renderer.xr.getCamera(camera);
 
 
 
-const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
-const _receiverStats = start_receiver_stats(pc);
+let pc = null;
+let _receiverStats = null;
+
+function initPC() {
+  if (pc) pc.close();
+  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  _receiverStats = start_receiver_stats(pc);
+  pc.ontrack = (event) => {
+    console.log("ontrack fired:", event.track, "streams:", event.streams);
+    video.srcObject = event.streams[0];
+    video.play();
+    print_video_fps(video);
+  };
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+    }
+  };
+}
+initPC();
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
 setSender((line) => {
@@ -337,8 +345,9 @@ renderer.setAnimationLoop(() => {
     
 
   handleControllerMovement();
-  xrCamera.getWorldPosition(pos);
-  xrCamera.getWorldQuaternion(quat);
+  const headCam = (xrCamera.cameras && xrCamera.cameras.length > 0) ? xrCamera.cameras[0] : xrCamera;
+  headCam.getWorldPosition(pos);
+  headCam.getWorldQuaternion(quat);
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    
@@ -364,6 +373,7 @@ ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
   if (data.type === "offer") {
     console.log("Received offer from streamer");
+    initPC();
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
     const answer = await pc.createAnswer();
@@ -425,20 +435,4 @@ ws.onmessage = async (event) => {
   }
 };
 
-pc.ontrack = (event) => {
-  console.log("ontrack fired:", event.track, "streams:", event.streams);
-  video.srcObject = event.streams[0];
-  video.play();
-  print_video_fps(video);
-};
-
-// Send ICE candidates
-pc.onicecandidate = (event) => {
-  if (event.candidate) {
-    ws.send(JSON.stringify({
-      type: "candidate",
-      candidate: event.candidate,
-    }));
-  }
-};
 print_network_log(pc);

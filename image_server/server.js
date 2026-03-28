@@ -71,6 +71,9 @@ wss.on("connection", (ws, req) => {
           headsetSocket.send(JSON.stringify(pendingOffer));
           pendingOffer = null;
         }
+      if (streamerSocket) {
+        streamerSocket.send(JSON.stringify({ type: "headset_joined" }));
+      }
     }
     return;
   }

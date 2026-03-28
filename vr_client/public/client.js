@@ -277,10 +277,26 @@ const xrCamera = renderer.xr.getCamera(camera);
 
 
 
-const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    });
-const _receiverStats = start_receiver_stats(pc);
+let pc = null;
+let _receiverStats = null;
+
+function initPC() {
+  if (pc) pc.close();
+  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  _receiverStats = start_receiver_stats(pc);
+  pc.ontrack = (event) => {
+    console.log("ontrack fired:", event.track, "streams:", event.streams);
+    video.srcObject = event.streams[0];
+    video.play();
+    print_video_fps(video);
+  };
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+    }
+  };
+}
+initPC();
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
 setSender((line) => {
@@ -365,6 +381,7 @@ ws.onmessage = async (event) => {
   const data = JSON.parse(event.data);
   if (data.type === "offer") {
     console.log("Received offer from streamer");
+    initPC();
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
     const answer = await pc.createAnswer();
@@ -426,20 +443,4 @@ ws.onmessage = async (event) => {
   }
 };
 
-pc.ontrack = (event) => {
-  console.log("ontrack fired:", event.track, "streams:", event.streams);
-  video.srcObject = event.streams[0];
-  video.play();
-  print_video_fps(video);
-};
-
-// Send ICE candidates
-pc.onicecandidate = (event) => {
-  if (event.candidate) {
-    ws.send(JSON.stringify({
-      type: "candidate",
-      candidate: event.candidate,
-    }));
-  }
-};
 print_network_log(pc);

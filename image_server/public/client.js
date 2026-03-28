@@ -387,7 +387,7 @@ let _lastRaymarchMs = 0;
 let _lastErpMs = 0;
 let _avgEncodeMs = 0;
 
-const pc = new RTCPeerConnection({
+let pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 });
 pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
@@ -396,14 +396,7 @@ pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", 
 
 const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
 
-ws.onopen = async () => {
-  console.log("Connected to signaling server (streamer)");
-  ws.send(JSON.stringify({ role: "streamer" }));
-
-
-
-
-  // Create offer to headset
+async function sendNewOffer() {
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   pc.getSenders().forEach(sender => {
@@ -421,18 +414,16 @@ ws.onopen = async () => {
     sender.setParameters(p).catch(()=>{});
     const effective = sender.getParameters();
     console.log('encodings after setParameters', effective.encodings);
-    // 'detail' preserves fine structure; correct for slow-moving volumetric renders
     try { sender.track.contentHint = 'detail'; } catch {}
   });
-  ws.send(
-    JSON.stringify({
-      role: "streamer",
-      type: "offer",
-      offer: pc.localDescription,
-    })
-  );
+  ws.send(JSON.stringify({ role: "streamer", type: "offer", offer: pc.localDescription }));
   console.log("Sent offer to server");
+}
 
+ws.onopen = async () => {
+  console.log("Connected to signaling server (streamer)");
+  ws.send(JSON.stringify({ role: "streamer" }));
+  await sendNewOffer();
 };
 
 
@@ -516,6 +507,10 @@ ws.onmessage = async (event) => {
   headsetForward.copy(forward);
   }
 
+  if (data.type === "headset_joined") {
+    await reinitWebRTC();
+  }
+
   if (data.type === "answer") {
     console.log("Received answer from headset");
     await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
@@ -563,12 +558,19 @@ const equiRight = new CubemapToEquirectangular(streamRenderer, cubeCamera, rende
 const combinedStream = streamRenderer.domElement.captureStream();
 combinedStream.getTracks().forEach((track) => pc.addTrack(track, combinedStream));
 
-
-
-
-
-
-
+async function reinitWebRTC() {
+  console.log("[WebRTC] Reinitializing connection");
+  pc.close();
+  pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.connectionState);
+  pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
+  pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
+  pc.onicecandidate = (event) => {
+    if (event.candidate) ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
+  };
+  combinedStream.getTracks().forEach(track => pc.addTrack(track, combinedStream));
+  await sendNewOffer();
+}
 
 
 // Poll outbound-rtp for average encode time per frame and bandwidth

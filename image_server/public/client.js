@@ -353,7 +353,7 @@ function movePlayerHorizontal(x, y) {
 
   // Move player rig
   newplayer.position.addScaledVector(dir, -y * speed);     // forward/back 
-  newplayer.position.addScaledVector(strafe, x * speed);   // left/right
+  newplayer.position.addScaledVector(strafe, -x * speed);   // left/right
 }
 
 
@@ -507,7 +507,7 @@ ws.onmessage = async (event) => {
   const q = data.quaternion;
 
   const forward = new THREE.Vector3(0, 0, -1); // camera looks down -Z
-  forward.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+  forward.applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w).invert());
 
   // Optional: ignore vertical component so movement is on XZ plane
   forward.y = 0;

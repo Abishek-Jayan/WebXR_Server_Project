@@ -337,8 +337,9 @@ renderer.setAnimationLoop(() => {
     
 
   handleControllerMovement();
-  xrCamera.getWorldPosition(pos);
-  xrCamera.getWorldQuaternion(quat);
+  const headCam = (xrCamera.cameras && xrCamera.cameras.length > 0) ? xrCamera.cameras[0] : xrCamera;
+  headCam.getWorldPosition(pos);
+  headCam.getWorldQuaternion(quat);
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({type:"pose",position: { x: pos.x, y: pos.y, z: pos.z },
     quaternion: { x: quat.x, y: quat.y, z: quat.z, w: quat.w }}));    

@@ -10,7 +10,7 @@ import { HOSTNAME, NRRD_URL, USE_LARGE_FILE_LOADER, RENDER_WIDTH, RENDER_HEIGHT,
 import { Sky } from './jsm/objects/Sky.js';
 
 const scene = new THREE.Scene();
-
+const PORT = parseInt(process.env.IMAGE_SERVER_PORT) || 3001;
 const sky = new Sky();
 sky.scale.setScalar(10000);
 scene.add(sky);
@@ -407,7 +407,7 @@ pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.c
 pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
 pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
 
-const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to server.js
+const ws = new WebSocket(`wss://${HOSTNAME}:${PORT}`); // connect to server.js
 
 async function sendNewOffer() {
   const offer = await pc.createOffer();

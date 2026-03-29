@@ -4,7 +4,7 @@ import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.j
 import { OculusHandModel } from './jsm/webxr/OculusHandModel.js';
 import { OculusHandPointerModel } from './jsm/webxr/OculusHandPointerModel.js';
 import Stats from './jsm/libs/stats.module.js';
-import { HOSTNAME } from "../../image_server/public/env.js";
+import { HOSTNAME, IMAGE_SERVER_PORT } from "../../image_server/public/env.js";
 import { print_network_log, print_video_fps, start_receiver_stats } from "../../logging/network_logging.js";
 import { log, setSender } from "../../logging/logger.js";
 
@@ -290,7 +290,7 @@ function initPC() {
 }
 initPC();
 
-const ws = new WebSocket(`wss://${HOSTNAME}:3001`); // connect to streamer server
+const ws = new WebSocket(`wss://${HOSTNAME}:${IMAGE_SERVER_PORT}`); // connect to streamer server
 setSender((line) => {
   if (ws.readyState === WebSocket.OPEN)
     ws.send(JSON.stringify({ type: "log", msg: line }));

@@ -1,0 +1,77 @@
+# WebXR Server Project — Docker Compose
+#
+# Required before first run:
+#   export SERVER_HOST=<your-machine-IP>   # IP the Quest headset can reach
+#   export NRRD_URL=/static/path/to/your/file.nrrd
+#
+# Then start both services:
+#   docker compose up --build
+#
+# On first startup each container auto-generates a self-signed TLS cert.
+# You must accept the browser security warning on the Quest for both ports.
+# To reuse pre-generated certs instead, see the CERT_DIR volume comment below.
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # image_server — Puppeteer headless renderer + WebSocket signaling broker
+  # ---------------------------------------------------------------------------
+  image_server:
+    build:
+      context: ./image_server
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      SERVER_HOST: ${SERVER_HOST:-localhost}
+      NRRD_URL: ${NRRD_URL:-/static/volume.nrrd}
+      RAYMARCH_STEPS: ${RAYMARCH_STEPS:-512}
+      RAYMARCH_THRESHOLD: ${RAYMARCH_THRESHOLD:-0.25}
+      RAYMARCH_DENSITY: ${RAYMARCH_DENSITY:-150.0}
+      RAYMARCH_GAMMA: ${RAYMARCH_GAMMA:-0.6}
+      WORLD_MAX: ${WORLD_MAX:-3}
+      INITIAL_IPD: ${INITIAL_IPD:-0.064}
+      MAX_BITRATE: ${MAX_BITRATE:-100000000}
+      MAX_FRAMERATE: ${MAX_FRAMERATE:-90}
+      RENDER_WIDTH: ${RENDER_WIDTH:-1920}
+      RENDER_HEIGHT: ${RENDER_HEIGHT:-1080}
+      USE_LARGE_FILE_LOADER: ${USE_LARGE_FILE_LOADER:-false}
+      MAX_SLABS: ${MAX_SLABS:-1}
+      DOCKER: "1"
+      CERT_DIR: /certs   # uncomment to use pre-generated certs (see volumes below)
+    volumes:
+      # Mount your NRRD volumetric data (read-only) — keeps it out of the image
+      - ./image_server/public/static:/app/image_server/public/static:ro
+      # Persist session logs on the host
+      - ./logs:/app/logs
+      # Optional: mount pre-generated certs so both services share the same cert
+      - ./certs:/certs:ro
+    shm_size: "256mb"
+    runtime: nvidia
+    # ---------------------------------------------------------------------------
+    # GPU support (NVIDIA) — requires NVIDIA Container Toolkit installed.
+    # ---------------------------------------------------------------------------
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, graphics, display]
+
+  # ---------------------------------------------------------------------------
+  # vr_client — HTTPS static server that the Quest headset browser loads
+  # ---------------------------------------------------------------------------
+  vr_client:
+    build:
+      context: .
+      dockerfile: vr_client/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      SERVER_HOST: ${SERVER_HOST:-localhost}
+      CERT_DIR: /certs   # uncomment to use pre-generated certs (see volumes below)
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      - image_server

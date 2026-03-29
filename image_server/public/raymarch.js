@@ -68,11 +68,13 @@ const material = new THREE.ShaderMaterial({
             vec2 bounds = intersectBox(vOrigin, rayDir, boxMin, boxMax);
             if (bounds.x > bounds.y) discard;
 
-            float t = max(bounds.x, 0.0);
+            float tStart = max(bounds.x, 0.0);
             float tEnd = bounds.y;
 
             const int STEPS = ${RAYMARCH_STEPS};
-            float dt = (tEnd - t) / float(STEPS);
+            // Adaptive step size — same density regardless of ray angle/distance,
+            // preserving close-up clarity.
+            float dt = (tEnd - tStart) / float(STEPS);
 
             // Threshold: discard voxels below this to cut background fog
             const float THRESHOLD = ${RAYMARCH_THRESHOLD.toFixed(6)};
@@ -82,9 +84,12 @@ const material = new THREE.ShaderMaterial({
 
             float accum = 0.0;
             float alpha = 0.0;
+            float tCurr = tStart;
 
             for (int i = 0; i < STEPS; i++) {
-                vec3 pos = vOrigin + rayDir * (t + float(i) * dt);
+                if (tCurr > tEnd) break;
+
+                vec3 pos = vOrigin + rayDir * tCurr;
                 vec3 texPos = pos + 0.5;
                 float val = sampleVolume(texPos);
 
@@ -100,6 +105,11 @@ const material = new THREE.ShaderMaterial({
                     // Front-to-back alpha compositing
                     accum += (1.0 - alpha) * mapped * opacity;
                     alpha += (1.0 - alpha) * opacity;
+                    tCurr += dt;
+                } else {
+                    // Empty voxel — skip ahead faster (2.0× keeps thin
+                    // structures intact while still cutting empty-space cost)
+                    tCurr += dt * 2.0;
                 }
 
                 if (alpha >= 0.99) break;

@@ -148,10 +148,11 @@ server.listen(PORT, "0.0.0.0", async () => {
     pipe: true,
     devtools: true,
     args: [
-      "--enable-gpu",
-      "--use-vulkan",
       "--no-sandbox",
       "--disable-dev-shm-usage",
+      "--ignore-gpu-blocklist",   // Bypass Chrome's GPU blocklist in container envs
+      "--disable-gpu-sandbox",    // Required for GPU access inside containers
+      "--use-angle=vulkan",       // ANGLE uses NVIDIA Vulkan directly (bypasses X11/GLX)
       "--js-flags=--max_old_space_size=8192",
       "--ignore-certificate-errors",
       "--ignore-certificate-errors-spki-list",

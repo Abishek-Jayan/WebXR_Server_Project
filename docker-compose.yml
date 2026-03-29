@@ -1,15 +1,16 @@
 # WebXR Server Project — Docker Compose
 #
-# Required before first run:
-#   export SERVER_HOST=<your-machine-IP>   # IP the Quest headset can reach
-#   export NRRD_URL=/static/path/to/your/file.nrrd
+# Usage (all env vars are optional — sensible defaults apply):
+#   sudo docker compose up --build
 #
-# Then start both services:
-#   docker compose up --build
+# Optional overrides:
+#   SERVER_HOST        Host IP visible to the Quest (default: auto-detected LAN IP)
+#   IMAGE_SERVER_PORT  Renderer + signaling server port (default: 3001)
+#   VR_CLIENT_PORT     VR client static server port     (default: 3000)
+#   NRRD_FILE          Full host path to the .nrrd file (default: ./image_server/public/static/volume.nrrd)
 #
-# On first startup each container auto-generates a self-signed TLS cert.
-# You must accept the browser security warning on the Quest for both ports.
-# To reuse pre-generated certs instead, see the CERT_DIR volume comment below.
+# Example:
+#   sudo NRRD_FILE=/home/abishekj/Desktop/3_RatC_greyscale.nrrd docker compose up
 
 services:
 
@@ -20,12 +21,12 @@ services:
     build:
       context: ./image_server
       dockerfile: Dockerfile
-    ports:
-      - "3001:3001"
+    network_mode: host
     environment:
-      SERVER_HOST: ${SERVER_HOST:-localhost}
-      NRRD_URL: ${NRRD_URL:-/static/volume.nrrd}
-      RAYMARCH_STEPS: ${RAYMARCH_STEPS:-512}
+      NRRD_FILE: ${NRRD_FILE:?Please provide NRRD_FILE, e.g. sudo NRRD_FILE=/path/to/file.nrrd docker compose up}
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      IMAGE_SERVER_PORT: ${IMAGE_SERVER_PORT:-3001}
+      RAYMARCH_STEPS: ${RAYMARCH_STEPS:-256}
       RAYMARCH_THRESHOLD: ${RAYMARCH_THRESHOLD:-0.25}
       RAYMARCH_DENSITY: ${RAYMARCH_DENSITY:-150.0}
       RAYMARCH_GAMMA: ${RAYMARCH_GAMMA:-0.6}
@@ -38,13 +39,10 @@ services:
       USE_LARGE_FILE_LOADER: ${USE_LARGE_FILE_LOADER:-false}
       MAX_SLABS: ${MAX_SLABS:-1}
       DOCKER: "1"
-      CERT_DIR: /certs   # uncomment to use pre-generated certs (see volumes below)
+      CERT_DIR: /certs
     volumes:
-      # Mount your NRRD volumetric data (read-only) — keeps it out of the image
-      - ./image_server/public/static:/app/image_server/public/static:ro
-      # Persist session logs on the host
+      - ${NRRD_FILE}:/app/image_server/public/static/volume.nrrd:ro
       - ./logs:/app/logs
-      # Optional: mount pre-generated certs so both services share the same cert
       - ./certs:/certs:ro
     shm_size: "256mb"
     runtime: nvidia
@@ -66,11 +64,12 @@ services:
     build:
       context: .
       dockerfile: vr_client/Dockerfile
-    ports:
-      - "3000:3000"
+    network_mode: host
     environment:
-      SERVER_HOST: ${SERVER_HOST:-localhost}
-      CERT_DIR: /certs   # uncomment to use pre-generated certs (see volumes below)
+      SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
+      IMAGE_SERVER_PORT: ${IMAGE_SERVER_PORT:-3001}
+      VR_CLIENT_PORT: ${VR_CLIENT_PORT:-3000}
+      CERT_DIR: /certs
     volumes:
       - ./certs:/certs:ro
     depends_on:

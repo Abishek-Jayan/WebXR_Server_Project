@@ -32,7 +32,9 @@ fi
 echo "[entrypoint] Writing /app/image_server/public/env.js"
 cat > /app/image_server/public/env.js << ENVEOF
 export const HOSTNAME = "${HOST}";
-export const NRRD_URL = "${NRRD_URL:-/static/volume.nrrd}";
+export const IMAGE_SERVER_PORT = ${IMAGE_SERVER_PORT:-3001};
+export const VR_CLIENT_PORT = ${VR_CLIENT_PORT:-3000};
+export const NRRD_URL = "/static/volume.nrrd";
 export const USE_LARGE_FILE_LOADER = ${USE_LARGE_FILE_LOADER:-false};
 export const MAX_SLABS = ${MAX_SLABS:-1};
 export const RAYMARCH_STEPS = ${RAYMARCH_STEPS:-512};

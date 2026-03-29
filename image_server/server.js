@@ -7,7 +7,7 @@ const { WebSocketServer } = require("ws");
 const os = require("os");
 const { default: HOSTNAME } = require("./public/env");
 
-const PORT = 3001;
+const PORT = parseInt(process.env.IMAGE_SERVER_PORT) || 3001;
 
 const sessionTs = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 const LOG_FILE = path.join(__dirname, '..', 'logs', `session_${sessionTs}.log`);
@@ -175,7 +175,7 @@ server.listen(PORT, "0.0.0.0", async () => {
   page.on("requestfailed", (req) => {
     console.error("❌ [Request failed]", req.url(), req.failure().errorText);
   });
-  page.goto(`https://localhost:${PORT}/`)
+  page.goto(`https://${HOSTNAME}:${PORT}/`)
   }
   );
 });

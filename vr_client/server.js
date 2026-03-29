@@ -20,7 +20,8 @@ const options = {
 };
 
 // create HTTPS server
-https.createServer(options, app).listen(3000, '0.0.0.0', () => {
-  console.log(`Server running on https://${HOSTNAME}:3000`);
+const PORT = parseInt(process.env.VR_CLIENT_PORT) || 3000;
+https.createServer(options, app).listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on https://${HOSTNAME}:${PORT}`);
 });
 

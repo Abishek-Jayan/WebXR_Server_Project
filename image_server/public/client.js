@@ -1,3 +1,8 @@
+import {
+  IMAGE_SERVER_PORT, NRRD_URL, USE_LARGE_FILE_LOADER,
+  WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE,
+  RENDER_WIDTH, RENDER_HEIGHT
+} from '/env.js';
 import * as THREE from "three";
 import { OrbitControls } from "./jsm/controls/OrbitControls.js";
 import { VRButton} from './jsm/webxr/VRButton.js';
@@ -6,11 +11,10 @@ import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
 import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
-import { HOSTNAME, NRRD_URL, USE_LARGE_FILE_LOADER, RENDER_WIDTH, RENDER_HEIGHT, WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE } from "./env.js";
 import { Sky } from './jsm/objects/Sky.js';
 
 const scene = new THREE.Scene();
-const PORT = parseInt(process.env.IMAGE_SERVER_PORT) || 3001;
+const PORT = IMAGE_SERVER_PORT;
 const sky = new Sky();
 sky.scale.setScalar(10000);
 scene.add(sky);
@@ -407,7 +411,7 @@ pc.onconnectionstatechange = () => console.log("[WebRTC] connectionState:", pc.c
 pc.oniceconnectionstatechange = () => console.log("[WebRTC] iceConnectionState:", pc.iceConnectionState);
 pc.onicegatheringstatechange = () => console.log("[WebRTC] iceGatheringState:", pc.iceGatheringState);
 
-const ws = new WebSocket(`wss://${HOSTNAME}:${PORT}`); // connect to server.js
+const ws = new WebSocket(`wss://${window.location.host}`); // connect to server.js
 
 async function sendNewOffer() {
   const offer = await pc.createOffer();

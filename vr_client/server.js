@@ -2,9 +2,20 @@ const express = require('express');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const { default: HOSTNAME } = require('../image_server/public/env');
+
+const HOSTNAME = process.env.SERVER_HOST || '0.0.0.0';
 
 const app = express();
+app.get('/env.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`
+export const HOSTNAME = ${JSON.stringify(process.env.SERVER_HOST || '0.0.0.0')};
+export const IMAGE_SERVER_PORT = ${parseInt(process.env.IMAGE_SERVER_PORT) || 3001};
+export const VR_CLIENT_PORT = ${parseInt(process.env.VR_CLIENT_PORT) || 3000};
+  `.trim());
+});
+
+
 
 // serve static files
 app.use(express.static(__dirname + '/public'));

@@ -78,7 +78,46 @@ This file is imported by `image_server/public/client.js`, `image_server/public/r
 
 Puppeteer does not support VR natively. Download the **Immersive-Web-Emulator** Chrome extension as an unpacked folder and place it inside `image_server/`.
 
-## Install + Run
+## Running with Docker (recommended)
+
+Docker Compose handles everything — Node.js, Chrome, GPU drivers, certificates, and env config.
+
+### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/)
+- NVIDIA GPU + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+
+### Run
+
+```bash
+sudo NRRD_FILE=/any/path/on/your/machine/file.nrrd docker compose up --build
+```
+
+`NRRD_FILE` can point to any `.nrrd` file anywhere on your system — it is mounted directly into the container. No need to copy files into the project directory.
+
+Optional overrides:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NRRD_FILE` | *(required)* | Full path to the `.nrrd` file on the host |
+| `SERVER_HOST` | `0.0.0.0` | LAN IP shown to the Quest headset |
+| `IMAGE_SERVER_PORT` | `3001` | Renderer + signaling server port |
+| `VR_CLIENT_PORT` | `3000` | VR client static server port |
+
+Example with overrides:
+```bash
+sudo SERVER_HOST=192.168.1.5 NRRD_FILE=/home/user/scans/brain.nrrd docker compose up
+```
+
+Open the client on the Quest browser:
+```
+https://<server-ip>:3000
+```
+
+> Because the certificate is self-signed, your browser/device will require a one-time "Proceed / Advanced" trust step.
+
+---
+
+## Install + Run (without Docker)
 
 Install dependencies:
 

@@ -45,10 +45,18 @@ RUN apt-get update && apt-get install -y curl ca-certificates --no-install-recom
     wget \
     xdg-utils \
     xvfb \
+    unzip \
     --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/image_server
+
+# Download the Immersive Web Emulator Chrome extension (v1.5.0)
+RUN wget -q https://github.com/meta-quest/immersive-web-emulator/releases/download/v1.3.0/iwe-v1.3.0.zip \
+    -O /tmp/iwe.zip \
+    && unzip -q /tmp/iwe.zip -d /tmp/iwe \
+    && mv /tmp/iwe Immersive-Web-Emulator-Chrome-Web-Store \
+    && rm /tmp/iwe.zip
 
 # Install dependencies — Puppeteer downloads Chrome for Testing here (~400 MB)
 COPY package*.json ./

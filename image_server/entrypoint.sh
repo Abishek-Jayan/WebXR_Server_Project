@@ -5,29 +5,24 @@ HOST="${SERVER_HOST:-localhost}"
 
 # ---------------------------------------------------------------------------
 # TLS certificates
+# Generate once into CERT_DIR (mounted volume) so certs persist across
+# restarts and are shared with vr_client via the same volume mount.
 # ---------------------------------------------------------------------------
-# Option 1: mount pre-generated certs via CERT_DIR (e.g. -v ./certs:/certs)
-# Option 2: let this script generate a self-signed cert at container startup
-if [ -d "${CERT_DIR:-/certs}" ] && \
-   [ -f "${CERT_DIR:-/certs}/key.pem" ] && \
-   [ -f "${CERT_DIR:-/certs}/cert.pem" ]; then
-    echo "[entrypoint] Using certificates from ${CERT_DIR:-/certs}"
-    cp "${CERT_DIR:-/certs}/key.pem" key.pem
-    cp "${CERT_DIR:-/certs}/cert.pem" cert.pem
-elif [ ! -f "key.pem" ] || [ ! -f "cert.pem" ]; then
-    echo "[entrypoint] Generating self-signed certificate for CN=${HOST}"
-    # Determine SAN type (IP or DNS)
-    if echo "$HOST" | grep -qE '^[0-9]{1,3}(\.[0-9]{1,3}){3}$'; then
-        SAN="IP:${HOST}"
-    else
-        SAN="DNS:${HOST}"
-    fi
+CERT_DIR="${CERT_DIR:-/certs}"
+mkdir -p "$CERT_DIR"
+
+if [ -f "$CERT_DIR/key.pem" ] && [ -f "$CERT_DIR/cert.pem" ]; then
+    echo "[entrypoint] Using certificates from ${CERT_DIR}"
+else
+    echo "[entrypoint] Generating self-signed certificate into ${CERT_DIR}"
     openssl req -x509 -newkey rsa:2048 \
-        -keyout key.pem -out cert.pem \
+        -keyout "$CERT_DIR/key.pem" -out "$CERT_DIR/cert.pem" \
         -days 365 -nodes \
-        -subj "/CN=${HOST}" \
-        -addext "subjectAltName=${SAN}"
+        -subj "/"
 fi
+
+cp "$CERT_DIR/key.pem" key.pem
+cp "$CERT_DIR/cert.pem" cert.pem
 
 # ---------------------------------------------------------------------------
 # Generate env.js from environment variables

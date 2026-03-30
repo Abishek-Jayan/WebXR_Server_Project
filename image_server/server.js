@@ -5,9 +5,8 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 const os = require("os");
-const { default: HOSTNAME } = require("./public/env");
-
-const PORT = parseInt(process.env.IMAGE_SERVER_PORT) || 3001;
+const HOSTNAME = process.env.SERVER_HOST || '0.0.0.0';
+const IMAGE_SERVER_PORT = parseInt(process.env.IMAGE_SERVER_PORT) || 3001;
 
 const sessionTs = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
 const LOG_FILE = path.join(__dirname, '..', 'logs', `session_${sessionTs}.log`);
@@ -28,6 +27,28 @@ function writeLog(source, text) {
 }
 
 const app = express();
+
+// serve env.js dynamically so no manual file creation is needed
+app.get('/env.js', (req, res) => {
+  res.setHeader('Content-Type', 'application/javascript');
+  res.send(`
+export const HOSTNAME = ${JSON.stringify(process.env.SERVER_HOST || '0.0.0.0')};
+export const IMAGE_SERVER_PORT = ${parseInt(process.env.IMAGE_SERVER_PORT) || 3001};
+export const NRRD_URL = "/static/volume.nrrd";
+export const USE_LARGE_FILE_LOADER = ${process.env.USE_LARGE_FILE_LOADER === 'true'};
+export const MAX_SLABS = ${parseInt(process.env.MAX_SLABS) || 1};
+export const RAYMARCH_STEPS = ${parseInt(process.env.RAYMARCH_STEPS) || 512};
+export const RAYMARCH_THRESHOLD = ${parseFloat(process.env.RAYMARCH_THRESHOLD) || 0.25};
+export const RAYMARCH_DENSITY = ${parseFloat(process.env.RAYMARCH_DENSITY) || 150.0};
+export const RAYMARCH_GAMMA = ${parseFloat(process.env.RAYMARCH_GAMMA) || 0.6};
+export const WORLD_MAX = ${parseFloat(process.env.WORLD_MAX) || 3};
+export const INITIAL_IPD = ${parseFloat(process.env.INITIAL_IPD) || 0.064};
+export const MAX_BITRATE = ${parseInt(process.env.MAX_BITRATE) || 100000000};
+export const MAX_FRAMERATE = ${parseInt(process.env.MAX_FRAMERATE) || 90};
+export const RENDER_WIDTH = ${parseInt(process.env.RENDER_WIDTH) || 1920};
+export const RENDER_HEIGHT = ${parseInt(process.env.RENDER_HEIGHT) || 1080};
+  `.trim());
+});
 
 // serve static files
 app.use(express.static(__dirname + "/public"));
@@ -138,8 +159,8 @@ wss.on("connection", (ws, req) => {
 const pathToExtension = path.join(__dirname, "Immersive-Web-Emulator-Chrome-Web-Store");
 
 
-server.listen(PORT, "0.0.0.0", async () => {
-  console.log(`Streamer server running on https://${HOSTNAME}:${PORT}`);
+server.listen(IMAGE_SERVER_PORT, "0.0.0.0", async () => {
+  console.log(`Streamer server running on https://${HOSTNAME}:${IMAGE_SERVER_PORT}`);
 
   const browser = await puppeteer.launch({
     browser: "chrome",
@@ -175,7 +196,7 @@ server.listen(PORT, "0.0.0.0", async () => {
   page.on("requestfailed", (req) => {
     console.error("❌ [Request failed]", req.url(), req.failure().errorText);
   });
-  page.goto(`https://${HOSTNAME}:${PORT}/`)
+  page.goto(`https://${HOSTNAME}:${IMAGE_SERVER_PORT}/`)
   }
   );
 });

@@ -23,7 +23,7 @@ services:
       dockerfile: Dockerfile
     network_mode: host
     environment:
-      NRRD_FILE: ${NRRD_FILE:?Please provide NRRD_FILE, e.g. sudo NRRD_FILE=/path/to/file.nrrd docker compose up}
+      NRRD_FILE: ${NRRD_FILE:-}
       SERVER_HOST: ${SERVER_HOST:-0.0.0.0}
       IMAGE_SERVER_PORT: ${IMAGE_SERVER_PORT:-3001}
       RAYMARCH_STEPS: ${RAYMARCH_STEPS:-256}
@@ -41,7 +41,7 @@ services:
       DOCKER: "1"
       CERT_DIR: /certs
     volumes:
-      - ${NRRD_FILE}:/app/image_server/public/static/volume.nrrd:ro
+      - ${NRRD_FILE:-/dev/null}:/app/image_server/public/static/volume.nrrd:ro
       - ./logs:/app/logs
       - ./certs:/certs:ro
     shm_size: "256mb"

@@ -1,7 +1,6 @@
 import * as THREE from "three";
-import { MAX_SLABS, RAYMARCH_STEPS, RAYMARCH_THRESHOLD, RAYMARCH_DENSITY, RAYMARCH_GAMMA } from "./env.js";
+import { MAX_SLABS, RAYMARCH_STEPS, RAYMARCH_THRESHOLD, RAYMARCH_DENSITY, RAYMARCH_GAMMA } from "/env.js";
 
-export { MAX_SLABS };
 
 const material = new THREE.ShaderMaterial({
 

@@ -1,5 +1,5 @@
 import {
-  IMAGE_SERVER_PORT, NRRD_URL, USE_LARGE_FILE_LOADER,
+  NRRD_URL, USE_LARGE_FILE_LOADER, MAX_SLABS,
   WORLD_MAX, INITIAL_IPD, MAX_BITRATE, MAX_FRAMERATE,
   RENDER_WIDTH, RENDER_HEIGHT
 } from '/env.js';
@@ -9,12 +9,11 @@ import { VRButton} from './jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from './jsm/webxr/XRControllerModelFactory.js';
 import { CubemapToEquirectangular } from './CubeMaptoEquirect.js';
 import { NRRDLoader } from './jsm/loaders/NRRDLoader.js';
-import rayMarchMaterial, { MAX_SLABS } from "./raymarch.js";
+import rayMarchMaterial from "./raymarch.js";
 import Stats from './jsm/libs/stats.module.js';
 import { Sky } from './jsm/objects/Sky.js';
 
 const scene = new THREE.Scene();
-const PORT = IMAGE_SERVER_PORT;
 const sky = new Sky();
 sky.scale.setScalar(10000);
 scene.add(sky);

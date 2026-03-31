@@ -1,6 +1,6 @@
-# VorteXR
+#WebXR Server Project
 
-VorteXR is a Node.js-based server-side rendering (SSR) prototype for WebXR. A headless, GPU-accelerated Three.js renderer generates stereoscopic views on the server and streams them to a lightweight WebXR client using WebRTC, while pose and interaction data are exchanged over a low-bandwidth control channel (WebSocket).
+This software is a Node.js-based server-side rendering (SSR) prototype for WebXR. A headless, GPU-accelerated Three.js renderer generates stereoscopic views on the server and streams them to a lightweight WebXR client using WebRTC, while pose and interaction data are exchanged over a low-bandwidth control channel (WebSocket).
 
 **Status:** proof-of-concept. We observed lower end-to-end responsiveness under local Wi-Fi in our prototype setup; results may vary with network conditions and hardware.
 
@@ -99,13 +99,12 @@ Optional overrides:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NRRD_FILE` | *(required)* | Full path to the `.nrrd` file on the host |
-| `SERVER_HOST` | `0.0.0.0` | LAN IP shown to the Quest headset |
 | `IMAGE_SERVER_PORT` | `3001` | Renderer + signaling server port |
 | `VR_CLIENT_PORT` | `3000` | VR client static server port |
 
 Example with overrides:
 ```bash
-sudo SERVER_HOST=192.168.1.5 NRRD_FILE=/home/user/scans/brain.nrrd docker compose up
+sudo NRRD_FILE=/home/user/scans/brain.nrrd docker compose up
 ```
 
 Open the client on the Quest browser:
@@ -147,7 +146,7 @@ https://<server-ip>:3000
 
 ## Volume Rendering
 
-VorteXR ray-marches NRRD volumetric datasets (e.g. brain MRI, nerve cell scans) inside a Three.js `BoxGeometry` using a custom GLSL shader (`raymarch.js`).
+This software ray-marches NRRD volumetric datasets (e.g. brain MRI, nerve cell scans) inside a Three.js `BoxGeometry` using a custom GLSL shader (`raymarch.js`).
 
 ### Loading strategies
 

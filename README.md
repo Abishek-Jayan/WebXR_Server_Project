@@ -1,8 +1,8 @@
 #WebXR Server Project
 
-This software is a Node.js-based server-side rendering (SSR) prototype for WebXR. A headless, GPU-accelerated Three.js renderer generates stereoscopic views on the server and streams them to a lightweight WebXR client using WebRTC, while pose and interaction data are exchanged over a low-bandwidth control channel (WebSocket).
+This software is a Node.js-based server-side rendering (SSR)  for WebXR. A headless, GPU-accelerated Three.js renderer generates stereoscopic views on the server and streams them to a lightweight WebXR client using WebRTC, while pose and interaction data are exchanged over a low-bandwidth control channel (WebSocket).
 
-**Status:** proof-of-concept. We observed lower end-to-end responsiveness under local Wi-Fi in our prototype setup; results may vary with network conditions and hardware.
+**Status:** We observed lower end-to-end responsiveness under local Wi-Fi in our setup; results may vary with network conditions and hardware.
 
 ## Features
 - ✅ Server-side rendering for WebXR experiences (GPU backend)
